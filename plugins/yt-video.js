@@ -9,8 +9,27 @@ import { cmd } from '../command.js';
 const __filename = fileURLToPath(import.meta.url);
 
 // ═══════════════════════════════════════════════════════════
-// 🎬 YOUTUBE DOWNLOADER - cnv.cx API (Converted to ERFAN-MD)
+// 🎬 YOUTUBE DOWNLOADER - FIXED VERSION
 // ═══════════════════════════════════════════════════════════
+
+const VIDEO_APIS = [
+    {
+        name: "Xemoz",
+        url: (videoUrl) => `https://api-xemoz-official.my.id/api/donwloader/ytmp4.php?url=${encodeURIComponent(videoUrl)}`,
+        checkResponse: (data) => data?.status === true && data?.result?.download,
+        getDownloadUrl: (data) => data.result.download,
+        getTitle: (data) => data.result.title,
+        getQuality: (data) => data.result.quality
+    },
+    {
+        name: "Delirius",
+        url: (videoUrl) => `https://api.delirius.store/download/ytmp4?url=${encodeURIComponent(videoUrl)}&format=360p`,
+        checkResponse: (data) => data?.status === true && data?.data?.download,
+        getDownloadUrl: (data) => data.data.download,
+        getTitle: (data) => data.data.title,
+        getQuality: (data) => data.data.format
+    }
+];
 
 const yt = {
   static: Object.freeze({
@@ -23,12 +42,9 @@ const yt = {
   }),
   log(m) { console.log(`[yt-skrep] ${m}`) },
   resolveConverterPayload(link, f = '128k') {
-    const a = ['128k', '320k', '144p', '240p', '360p', '720p', '1080p']
+    const a = ['128k', '320k']
     if (!a.includes(f)) throw Error(`invalid format. available: ${a.join(', ')}`)
-    const t = f.endsWith('k') ? 'mp3' : 'mp4'
-    const b = t === 'mp3' ? parseInt(f) + '' : '128'
-    const v = t === 'mp4' ? parseInt(f) + '' : '720'
-    return { link, format: t, audioBitrate: b, videoQuality: v, filenameStyle: 'pretty', vCodec: 'h264' }
+    return { link, format: 'mp3', audioBitrate: parseInt(f) + '', videoQuality: '720', filenameStyle: 'pretty', vCodec: 'h264' }
   },
   sanitizeFileName(n) {
     const e = n.match(/\.[^.]+$/)[0]
@@ -80,61 +96,119 @@ async function convertToFast(buffer) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🎬 VIDEO COMMAND - With Search Support
+// 🎬 VIDEO COMMAND - FIXED (Search + Download Working)
 // ═══════════════════════════════════════════════════════════
 
 cmd({
     pattern: "ytv2",
-    alias: ["ytvideoo", "ytmp42"],
+    alias: ["videox", "ytmp42"],
     desc: "Download YouTube video with search support",
     category: "download",
     react: "📹",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return await reply(`*Example :* .ytv2 https://youtu.be/JiEW1agPqNY\nOr: .ytv2 Alan Walker Faded`)
+        if (!q) return await reply(`*Example :*.ytv2 Alan Walker Faded`)
 
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } })
 
         let url = q;
         let videoInfo = null;
-        let format = '1080p';
+        let format = '360p';
+
+        // ═══════════════════════════════════════════════════════════
+        // 🔧 FIX: Extract format FIRST before any URL processing
+        // ═══════════════════════════════════════════════════════════
+        const parts = q.trim().split(/\s+/);
+        const lastPart = parts[parts.length - 1];
+
+        // Check if last part is a quality format
+        if (['128k', '320k', '144p', '240p', '360p', '720p', '1080p'].includes(lastPart)) {
+            format = lastPart;
+            // Remove format from query
+            url = parts.slice(0, -1).join(' ');
+        }
 
         // Check if it's a URL or search query
-        if (!q.match(/(youtube\.com|youtu\.be)/gi)) {
-            // Search mode
-            const search = await yts(q);
+        if (!url.match(/(youtube\.com|youtu\.be)/gi)) {
+            // ═══════════════════════════════════════════════════════════
+            // 🔍 SEARCH MODE
+            // ═══════════════════════════════════════════════════════════
+            const search = await yts(url);
             videoInfo = search.videos[0];
             if (!videoInfo) return await reply("❌ No video results found!");
             url = videoInfo.url;
 
-            // Send thumbnail with info
             await conn.sendMessage(from, {
                 image: { url: videoInfo.thumbnail },
-                caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+                caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n📊 *Quality:* ${format}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+            }, { quoted: mek });
+        } else {
+            // ═══════════════════════════════════════════════════════════
+            // 🔗 DIRECT URL MODE
+            // ═══════════════════════════════════════════════════════════
+            await conn.sendMessage(from, {
+                text: `*🎬 VIDEO DOWNLOADER*\n\n🔗 *URL:* ${url}\n📊 *Quality:* ${format}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
             }, { quoted: mek });
         }
 
-        // Check for quality argument (e.g., .ytv2 link 720p)
-        const parts = q.split(' ');
-        const lastPart = parts[parts.length - 1];
-        if (['128k', '320k', '144p', '240p', '360p', '720p', '1080p'].includes(lastPart)) {
-            format = lastPart;
-            url = parts.slice(0, -1).join(' ');
+        // ═══════════════════════════════════════════════════════════
+        // 🚀 PARALLEL API CALLS for Video
+        // ═══════════════════════════════════════════════════════════
+
+        const apiPromises = VIDEO_APIS.map(api => 
+            axios.get(api.url(url), { 
+                timeout: 30000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            })
+            .then(response => ({ success: true, api: api, data: response.data }))
+            .catch(error => ({ success: false, api: api, error: error.message }))
+        );
+
+        const results = await Promise.all(apiPromises);
+
+        let downloadUrl = null;
+        let apiTitle = videoInfo?.title || "Video";
+        let apiQuality = format;
+        let errors = [];
+
+        for (const result of results) {
+            if (result.success) {
+                const api = result.api;
+                const data = result.data;
+
+                console.log(`📊 ${api.name} Response:`, JSON.stringify(data, null, 2));
+
+                if (api.checkResponse(data)) {
+                    downloadUrl = api.getDownloadUrl(data);
+                    apiTitle = api.getTitle(data) || apiTitle;
+                    apiQuality = api.getQuality(data) || format;
+                    console.log(`✅ ${api.name} API Success!`);
+                    break;
+                } else {
+                    errors.push(`${api.name}: Invalid response`);
+                }
+            } else {
+                errors.push(`${result.api.name}: ${result.error}`);
+            }
         }
 
-        yt.log(`Downloading video: ${url} | Format: ${format}`)
-        let { buffer, fileName } = await yt.download(url, format)
-        buffer = await convertToFast(buffer)
+        if (!downloadUrl) {
+            return await reply(
+                `❌ *Video Download Failed!*\n\n` +
+                `📝 *Errors:*\n${errors.map(e => `• ${e}`).join('\n')}\n\n` +
+                `🔧 *Try:* Different video ya baad mein try karo`
+            );
+        }
 
-        await conn.sendMessage(from, { 
-            video: buffer, 
-            mimetype: 'video/mp4', 
-            fileName,
-            caption: `🎬 *Video Downloaded*\n\n📊 *Quality:* ${format}\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
-        }, { quoted: mek })
+        await conn.sendMessage(from, {
+            video: { url: downloadUrl },
+            caption: `🎬 *${apiTitle}*\n\n📊 *Quality:* ${apiQuality}\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+        }, { quoted: mek });
 
-        await conn.sendMessage(from, { react: { text: '🔥', key: m.key } })
+        await conn.sendMessage(from, { react: { text: '🔥', key: m.key } });
 
     } catch (e) {
         console.error(e)
@@ -144,12 +218,12 @@ cmd({
 });
 
 // ═══════════════════════════════════════════════════════════
-// 🎵 AUDIO COMMAND - With Search Support
+// 🎵 AUDIO COMMAND - FIXED (Search + Download Working)
 // ═══════════════════════════════════════════════════════════
 
 cmd({
     pattern: "yta2",
-    alias: ["ytaudio2", "ytmp32"],
+    alias: ["ytaudioa", "ytmp32"],
     desc: "Download YouTube audio with search support",
     category: "download",
     react: "🎵",
@@ -164,27 +238,40 @@ cmd({
         let videoInfo = null;
         let format = '128k';
 
+        // ═══════════════════════════════════════════════════════════
+        // 🔧 FIX: Extract format FIRST before any URL processing
+        // ═══════════════════════════════════════════════════════════
+        const parts = q.trim().split(/\s+/);
+        const lastPart = parts[parts.length - 1];
+
+        // Check if last part is a quality format
+        if (['128k', '320k'].includes(lastPart)) {
+            format = lastPart;
+            // Remove format from query
+            url = parts.slice(0, -1).join(' ');
+        }
+
         // Check if it's a URL or search query
-        if (!q.match(/(youtube\.com|youtu\.be)/gi)) {
-            // Search mode
-            const search = await yts(q);
+        if (!url.match(/(youtube\.com|youtu\.be)/gi)) {
+            // ═══════════════════════════════════════════════════════════
+            // 🔍 SEARCH MODE
+            // ═══════════════════════════════════════════════════════════
+            const search = await yts(url);
             videoInfo = search.videos[0];
             if (!videoInfo) return await reply("❌ No video results found!");
             url = videoInfo.url;
 
-            // Send thumbnail with info
             await conn.sendMessage(from, {
                 image: { url: videoInfo.thumbnail },
-                caption: `*🎵 AUDIO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+                caption: `*🎵 AUDIO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n📊 *Quality:* ${format}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
             }, { quoted: mek });
-        }
-
-        // Check for quality argument (e.g., .yta2 link 320k)
-        const parts = q.split(' ');
-        const lastPart = parts[parts.length - 1];
-        if (['128k', '320k'].includes(lastPart)) {
-            format = lastPart;
-            url = parts.slice(0, -1).join(' ');
+        } else {
+            // ═══════════════════════════════════════════════════════════
+            // 🔗 DIRECT URL MODE
+            // ═══════════════════════════════════════════════════════════
+            await conn.sendMessage(from, {
+                text: `*🎵 AUDIO DOWNLOADER*\n\n🔗 *URL:* ${url}\n📊 *Quality:* ${format}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+            }, { quoted: mek });
         }
 
         yt.log(`Downloading audio: ${url} | Format: ${format}`)
