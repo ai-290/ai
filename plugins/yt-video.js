@@ -100,8 +100,8 @@ async function convertToFast(buffer) {
 // ═══════════════════════════════════════════════════════════
 
 cmd({
-    pattern: "ytv2",
-    alias: ["videox", "ytmp42"],
+    pattern: "ytv",
+    alias: ["video", "ytmp4"],
     desc: "Download YouTube video with search support",
     category: "download",
     react: "📹",
@@ -222,8 +222,8 @@ cmd({
 // ═══════════════════════════════════════════════════════════
 
 cmd({
-    pattern: "yta2",
-    alias: ["ytaudioa", "ytmp32"],
+    pattern: "play2",
+    alias: ["play2", "ytmp32"],
     desc: "Download YouTube audio with search support",
     category: "download",
     react: "🎵",
