@@ -1,76 +1,84 @@
-// ERFAN-MD - Facebook Downloader
+// ERFAN-MD
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fetch from 'node-fetch';
 import { cmd } from '../command.js';
-import axios from 'axios';
+import config from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ═══════════════════════════════════════════════════════════
+// 📘 FACEBOOK COMMAND - ERINE STYLE IN ERFAN STRUCTURE
+// ═══════════════════════════════════════════════════════════
+
 cmd({
     pattern: "facebook",
-    alias: ["fb", "fbdl", "fbdown"],
-    desc: "Download Facebook videos and send them on WhatsApp",
-    category: "downloader",
-    react: "🎥",
+    alias: ["fb", "fbdl"],
+    desc: "Download Facebook video",
+    category: "download",
+    react: "📘",
     filename: __filename
-},
-async (conn, mek, m, { from, q, reply, react }) => {
+}, async (conn, mek, m, { from, q, reply, userConfig }) => {
     try {
-
-        // Check URL
-        if (!q) {
-            return reply(
-                "❌ Please provide a Facebook Video URL.\n\nExample:\n.facebook https://www.facebook.com/share/r/xxxxx/"
-            );
+        // Validasi input dari user
+        if (!q) return await reply(`Kirim link Facebook yang mau di-download!\n\n💡 Contoh: *.fb https://www.facebook.com/100044406976954/videos/1091456635297959/*`);
+        
+        if (!q.match(/(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.watch|fb\.com|fb\.gg)/i)) {
+            return await reply('⚠️ Link yang lu kirim bukan link Facebook yang valid cuy!');
         }
 
-        // React loading
-        await react("⬇️");
+        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
+        await reply('⏳ *Sedang mengambil video dari Facebook...*');
 
-        // ✅ NEW Ziaul API URL
-        const apiUrl = `https://api.ziaul.my.id/api/downloader/fbdownload?url=${encodeURIComponent(q)}`;
+        let apiUrl = `https://api.ryzumi.net/api/downloader/facebook?url=${encodeURIComponent(q)}`;
+        
+        // User Agent biar aman dari blokir API
+        const fakeUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-        // Fetch API Data
-        const { data } = await axios.get(apiUrl, { timeout: 30000 });
-
-        // ✅ Validate response (New Structure)
-        if (!data || !data.status || !data.data || !data.data.downloads || data.data.downloads.length === 0) {
-            await react("❌");
-            return reply("❌ Failed to fetch Facebook video. Try another link.");
-        }
-
-        // ✅ Get best quality video URL
-        const videoUrl = data.data.best_quality || data.data.downloads[0].url;
-
-        if (!videoUrl) {
-            await react("❌");
-            return reply("❌ Video download URL not found.");
-        }
-
-        // Download video buffer
-        const videoResponse = await axios.get(videoUrl, {
-            responseType: 'arraybuffer',
-            timeout: 120000,
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
+        let response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+                'accept': 'application/json',
+                'User-Agent': fakeUserAgent
+            }
         });
 
-        const videoBuffer = Buffer.from(videoResponse.data);
+        let json = await response.json();
 
-        // Send video
+        // Validasi response dari API Ryzumi
+        if (!json.success || !json.result) throw 'Gagal mengambil data. Pastikan link tidak di-private atau coba lagi nanti.';
+
+        let result = json.result;
+        
+        // Ambil array video dari respons JSON (biasanya yang pertama itu kualitas HD)
+        let videoData = result.media?.videos?.[0] || result.media?.all?.[0];
+        
+        if (!videoData || !videoData.url) throw 'Video tidak ditemukan di dalam link tersebut.';
+
+        // Bikin caption yang rapi
+        let titleShort = result.title ? result.title.substring(0, 60) + '...' : 'Tidak ada judul';
+        
+        const BOT_NAME = userConfig?.BOT_NAME || config.BOT_NAME || "ERFAN-MD";
+        
+        let captionMsg = `╭─⟡ *F A C E B O O K  D L* ⟡─╮\n`;
+        captionMsg += `│ 🎬 *Title:* ${titleShort}\n`;
+        captionMsg += `│ 🌟 *Quality:* ${videoData.quality || 'N/A'}\n`;
+        captionMsg += `╰─────────────────────────⟡\n\n`;
+        captionMsg += `> _Berhasil mendownload video._ 🚀\n`;
+        captionMsg += `> © ${BOT_NAME}`;
+
+        // Kirim videonya ke chat
         await conn.sendMessage(from, {
-            video: videoBuffer,
-            mimetype: 'video/mp4',
-            caption: `✅ *Downloaded Successfully!*\n\n📹 *Quality:* ${data.data.downloads[0].quality || 'Best'}\n⏱ *Duration:* ${data.data.duration || 'N/A'}\n\n> *IT'S ERFAN AHMAD*`
+            video: { url: videoData.url },
+            caption: captionMsg
         }, { quoted: mek });
 
-        // Success reaction
-        await react("✅");
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (e) {
-        console.log("Facebook Downloader Error:", e);
-        await react("❌");
-        reply("❌ An error occurred while downloading Facebook video.\nPlease try again later.");
+        console.error("❌ Error in .facebook:", e);
+        await reply(`❌ *Terjadi kesalahan:* ${e.message || e}`);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
