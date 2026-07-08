@@ -133,7 +133,7 @@ _📥 Processing your video file, please wait..._
                 {
                     video: { url: dlData.video_url },
                     mimetype: 'video/mp4',
-                    caption: `✅ *${dlData.title}*\n📹 Quality: ${dlData.quality}p\n\n*🚀 Powered by AHMAD-MD*`
+                    caption: `✅ *${dlData.title}*\n📹 Quality: ${dlData.quality}p\n\n*🚀 Powered by DARKZONE-MD*`
                 },
                 { quoted: mek }
             );
