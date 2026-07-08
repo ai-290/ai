@@ -9,7 +9,7 @@ import { cmd } from '../command.js';
 const __filename = fileURLToPath(import.meta.url);
 
 // ═══════════════════════════════════════════════════════════
-// 🎬 YOUTUBE DOWNLOADER - FIXED (XRizal API for Video)
+// 🎬 YOUTUBE DOWNLOADER - BUFFER APPROACH (FIXED)
 // ═══════════════════════════════════════════════════════════
 
 // cnv.cx for audio (still working)
@@ -78,12 +78,12 @@ async function convertToFast(buffer) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🎬 VIDEO COMMAND - XRizal API (TESTED & WORKING)
+// 🎬 VIDEO COMMAND - BUFFER DOWNLOAD (FIXED EXPIRING URL)
 // ═══════════════════════════════════════════════════════════
 
 cmd({
     pattern: "video",
-    alias: ["xv", "ytmp42"],
+    alias: ["xn", "ytmp42"],
     desc: "Download YouTube video with search support",
     category: "download",
     react: "📹",
@@ -99,7 +99,6 @@ cmd({
 
         // Check if it's a URL or search query
         if (!q.match(/(youtube\.com|youtu\.be)/gi)) {
-            // Search mode
             const search = await yts(q);
             videoInfo = search.videos[0];
             if (!videoInfo) return await reply("❌ No video results found!");
@@ -107,17 +106,16 @@ cmd({
 
             await conn.sendMessage(from, {
                 image: { url: videoInfo.thumbnail },
-                caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+                caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n\n*Status:* ⏳ Fetching download link...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
             }, { quoted: mek });
         } else {
-            // Direct URL mode
             await conn.sendMessage(from, {
-                text: `*🎬 VIDEO DOWNLOADER*\n\n🔗 *URL:* ${url}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+                text: `*🎬 VIDEO DOWNLOADER*\n\n🔗 *URL:* ${url}\n\n*Status:* ⏳ Fetching download link...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
             }, { quoted: mek });
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 🚀 XRizal API Call for Video
+        // 🚀 XRizal API Call
         // ═══════════════════════════════════════════════════════════
         const apiUrl = `https://api.xrizal.my.id/api/downloader/ytmp4?url=${encodeURIComponent(url)}`;
         const response = await axios.get(apiUrl, { 
@@ -135,20 +133,38 @@ cmd({
         const data = resData.result;
 
         // Get video from video_normal array (has audio + video)
-        const videoUrl = data.video_normal && data.video_normal.length > 0 
+        const videoDownloadUrl = data.video_normal && data.video_normal.length > 0 
             ? data.video_normal[0].url 
             : null;
 
-        if (!videoUrl) throw new Error('Video download link not found.');
+        if (!videoDownloadUrl) throw new Error('Video download link not found.');
 
-        const capVideo = `🎬 *${data.title || 'Video'}*\n\n` +
-                        `⏳ *Duration:* ${data.duration || '-'}\n\n` +
-                        `*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`;
-
+        // ═══════════════════════════════════════════════════════════
+        // 🔧 FIX: Download to buffer first (URL expires quickly!)
+        // ═══════════════════════════════════════════════════════════
         await conn.sendMessage(from, {
-            video: { url: videoUrl },
+            text: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${data.title || '-'}\n⏳ *Duration:* ${data.duration || '-'}\n\n*Status:* ⬇️ Downloading video to server...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+        }, { quoted: mek });
+
+        // Download video to buffer (before URL expires!)
+        console.log("⬇️ Downloading video to buffer...");
+        const videoResponse = await axios.get(videoDownloadUrl, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.youtube.com/'
+            }
+        });
+
+        const videoBuffer = Buffer.from(videoResponse.data);
+        console.log(`✅ Video downloaded to buffer: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+
+        // Send video from buffer
+        await conn.sendMessage(from, {
+            video: videoBuffer,
             mimetype: 'video/mp4',
-            caption: capVideo
+            caption: `🎬 *${data.title || 'Video'}*\n\n⏳ *Duration:* ${data.duration || '-'}\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
         }, { quoted: mek });
 
         await conn.sendMessage(from, { react: { text: '🔥', key: m.key } });
@@ -166,7 +182,7 @@ cmd({
 
 cmd({
     pattern: "play2",
-    alias: ["play2", "ytmp32"],
+    alias: ["ytaudio", "ytmp32"],
     desc: "Download YouTube audio with search support",
     category: "download",
     react: "🎵",
