@@ -1,6 +1,10 @@
+import http from 'http';
+import https from 'https';
+import { fileURLToPath } from 'url';
 import { cmd } from "../command.js";
 import axios from 'axios';
 
+const __filename = fileURLToPath(import.meta.url);
 
 // Create keep-alive agents
 const httpAgent = new http.Agent({ keepAlive: true });
@@ -23,11 +27,9 @@ cmd({
     alias: ["facebook"],
     desc: "Download Facebook videos (HD only)",
     category: "download",
-    filename: import.meta.url
-}, async (conn, mek, m, { from, args, q, reply, userConfig }) => {
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply, userConfig }) => {
     try { 
-        const botConfig = userConfig;
-
         if (!q) return reply("📌 Please provide a Facebook video link.");
         if (!q.includes("facebook.com")) return reply("❌ Invalid Facebook link.");
 
@@ -42,7 +44,7 @@ cmd({
 
         const { title, thumbnail, high } = data.data;
 
-        const caption = `🎬 *Facebook Video Downloader*\n\n📖 *Title:* ${title}\n\n🔰 *${botConfig.CAPTION || "Powered by ERFAN"}*`;
+        const caption = `🎬 *Facebook Video Downloader*\n\n📖 *Title:* ${title}\n\n🔰 *${userConfig?.CAPTION || "Powered by ERFAN"}*`;
 
         await conn.sendMessage(from, { 
             video: { url: high }, 
@@ -55,5 +57,6 @@ cmd({
     } catch (e) { 
         console.error("Facebook HD Downloader Error:", e);
         reply(`❌ Error occurred: ${e.message}`);
+        await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
     }
 });
