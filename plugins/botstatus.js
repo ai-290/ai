@@ -9,20 +9,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ═══════════════════════════════════════════════════════════
-// 🎵 TIKTOK COMMAND - FIXED & OPTIMIZED
+// 🎵 TIKTOK COMMAND - NANZZ API (NEW)
 // ═══════════════════════════════════════════════════════════
 
 const TIKTOK_APIS = [
     {
-        name: "Xemoz",
-        url: (ttUrl) => `https://api-xemoz-official.my.id/api/donwloader/tiktok.php?url=${encodeURIComponent(ttUrl)}`,
-        checkResponse: (data) => data?.status === true && data?.result?.result?.video?.length > 0,
-        getVideoUrl: (data) => data.result.result.video[0],
-        getUsername: (data) => data.result.result.username,
-        getDuration: (data) => data.result.result.duration,
-        getStats: (data) => data.result.result.stats,
-        getType: (data) => data.result.result.type,
-        getAudioUrl: (data) => data.result.result.audio?.[0] || null
+        name: "Nanzz",
+        url: (ttUrl) => `https://api-nanzz.my.id/docs/api/downloader/tiktokv2.php?url=${encodeURIComponent(ttUrl)}`,
+        checkResponse: (data) => data?.status === true && data?.result?.video_tanpa_watermark,
+        getVideoUrl: (data) => data.result.video_tanpa_watermark,
+        getAudioUrl: (data) => data.result.audio_mp3,
+        getCaption: (data) => data.result.caption,
+        getAuthor: (data) => data.result.author
     }
 ];
 
@@ -62,9 +60,8 @@ cmd({
 
         let videoUrl = null;
         let audioUrl = null;
-        let username = "Unknown";
-        let duration = "0:00";
-        let stats = { views: "0", likes: "0", comments: "0", shares: "0" };
+        let caption = "";
+        let author = "Unknown";
         let successApi = "";
         let errors = [];
 
@@ -77,19 +74,9 @@ cmd({
 
                 if (api.checkResponse(data)) {
                     videoUrl = api.getVideoUrl(data);
-                    audioUrl = api.getAudioUrl ? api.getAudioUrl(data) : null;
-                    username = api.getUsername(data) || "Unknown";
-                    duration = api.getDuration(data) || "0:00";
-                    
-                    // Handle null stats gracefully
-                    const rawStats = api.getStats(data) || {};
-                    stats = {
-                        views: rawStats.views?.toString() || "0",
-                        likes: rawStats.likes?.toString() || "0",
-                        comments: rawStats.comments?.toString() || "0",
-                        shares: rawStats.shares?.toString() || "0"
-                    };
-                    
+                    audioUrl = api.getAudioUrl(data) || null;
+                    caption = api.getCaption(data) || "";
+                    author = api.getAuthor(data) || "Unknown";
                     successApi = api.name;
                     console.log(`✅ ${api.name} API Success!`);
                     break;
@@ -115,21 +102,23 @@ cmd({
         // 🎵 TIKTOK VIDEO SEND
         // ═══════════════════════════════════════════════════════════
 
+        // Build caption
+        let videoCaption = `🎵 *TikTok Downloader*\n\n` +
+                           `👤 *Author:* ${author}\n\n`;
+
+        if (caption) {
+            videoCaption += `📝 *Caption:* ${caption}\n\n`;
+        }
+
+        videoCaption += `*Powered by ${BOT_NAME} ✅*`;
+
         await conn.sendMessage(from, {
             video: { url: videoUrl },
             mimetype: 'video/mp4',
-            caption: `🎵 *TikTok Downloader*\n\n` +
-                     `👤 *Username:* ${username}\n` +
-                     `⏱️ *Duration:* ${duration}\n` +
-                     `📊 *Stats:*\n` +
-                     `   👁️ Views: ${stats.views}\n` +
-                     `   ❤️ Likes: ${stats.likes}\n` +
-                     `   💬 Comments: ${stats.comments}\n` +
-                     `   🔄 Shares: ${stats.shares}\n\n` +
-                     `*Powered by ${BOT_NAME} ✅*`
+            caption: videoCaption
         }, { quoted: mek });
 
-        // Optional: Send audio separately if available
+        // Send audio separately if available
         if (audioUrl) {
             await conn.sendMessage(from, {
                 audio: { url: audioUrl },
