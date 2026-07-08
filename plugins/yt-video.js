@@ -1,237 +1,307 @@
-// ERFAN-MD
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
-import fs from 'fs';
 import axios from 'axios';
 import yts from 'yt-search';
 import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
-// ═══════════════════════════════════════════════════════════
-// 🎬 YOUTUBE DOWNLOADER - BUFFER APPROACH (FIXED)
-// ═══════════════════════════════════════════════════════════
-
-// cnv.cx for audio (still working)
-const yt = {
-  static: Object.freeze({
-    baseUrl: 'https://cnv.cx',
-    headers: {
-      'accept-encoding': 'gzip, deflate, br, zstd',
-      'origin': 'https://frame.y2meta-uk.com',
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0'
-    }
-  }),
-  log(m) { console.log(`[yt-skrep] ${m}`) },
-  resolveConverterPayload(link, f = '128k') {
-    const a = ['128k', '320k']
-    if (!a.includes(f)) throw Error(`invalid format. available: ${a.join(', ')}`)
-    return { link, format: 'mp3', audioBitrate: parseInt(f) + '', videoQuality: '720', filenameStyle: 'pretty', vCodec: 'h264' }
-  },
-  sanitizeFileName(n) {
-    const e = n.match(/\.[^.]+$/)[0]
-    const f = n.replace(new RegExp(`\\${e}$`), '').replaceAll(/[^A-Za-z0-9]/g, '_').replace(/_+/g, '_').toLowerCase()
-    return f + e
-  },
-  async getBuffer(u) {
-    const h = structuredClone(this.static.headers)
-    h.referer = 'https://v6.www-y2mate.com/'
-    h.range = 'bytes=0-'
-    delete h.origin
-    const r = await fetch(u, { headers: h })
-    if (!r.ok) throw Error(`${r.status} ${r.statusText}`)
-    const ab = await r.arrayBuffer()
-    return Buffer.from(ab)
-  },
-  async getKey() {
-    const r = await fetch(this.static.baseUrl + '/v2/sanity/key', { headers: this.static.headers })
-    if (!r.ok) throw Error(`${r.status} ${r.statusText}`)
-    return await r.json()
-  },
-  async convert(u, f) {
-    const { key } = await this.getKey()
-    const p = this.resolveConverterPayload(u, f)
-    const h = { key, ...this.static.headers }
-    const r = await fetch(this.static.baseUrl + '/v2/converter', { headers: h, method: 'post', body: new URLSearchParams(p) })
-    if (!r.ok) throw Error(`${r.status} ${r.statusText}`)
-    return await r.json()
-  },
-  async download(u, f) {
-    const { url, filename } = await this.convert(u, f)
-    const buffer = await this.getBuffer(url)
-    return { fileName: this.sanitizeFileName(filename), buffer }
-  }
-}
-
-async function convertToFast(buffer) {
-  const tempIn = './temp_in.mp4'
-  const tempOut = './temp_out.mp4'
-  fs.writeFileSync(tempIn, buffer)
-  await new Promise((res, rej) => {
-    const ff = spawn('ffmpeg', ['-i', tempIn, '-c', 'copy', '-movflags', 'faststart', tempOut])
-    ff.on('close', code => code === 0 ? res() : rej(new Error('ffmpeg convert error')))
-  })
-  const newBuffer = fs.readFileSync(tempOut)
-  fs.unlinkSync(tempIn)
-  fs.unlinkSync(tempOut)
-  return newBuffer
-}
-
-// ═══════════════════════════════════════════════════════════
-// 🎬 VIDEO COMMAND - BUFFER DOWNLOAD (FIXED EXPIRING URL)
-// ═══════════════════════════════════════════════════════════
-
+// ──────────────────────────────────────────────────────────────
+// 🎬 VIDEO COMMAND (Updated with GiftedTech & JerryCoder APIs)
+// ──────────────────────────────────────────────────────────────
 cmd({
     pattern: "video",
-    alias: ["xn", "ytmp42"],
-    desc: "Download YouTube video with search support",
+    alias: ["ytv", "ytmp4", "vz"],
+    desc: "Download YouTube video (MP4) with auto fallback",
     category: "download",
     react: "📹",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return await reply(`*Example :* .ytv2 https://youtu.be/JiEW1agPqNY\nOr: .ytv2 Alan Walker Faded`)
-
-        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } })
+        if (!q) return await reply("❌ Please provide a YouTube video name or URL!\nExample: `.video alone marshmello`");
 
         let url = q;
         let videoInfo = null;
+        let videoId = null;
+        let isLongVideo = false;
 
-        // Check if it's a URL or search query
-        if (!q.match(/(youtube\.com|youtu\.be)/gi)) {
-            const search = await yts(q);
-            videoInfo = search.videos[0];
-            if (!videoInfo) return await reply("❌ No video results found!");
-            url = videoInfo.url;
-
-            await conn.sendMessage(from, {
-                image: { url: videoInfo.thumbnail },
-                caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n\n*Status:* ⏳ Fetching download link...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
-            }, { quoted: mek });
-        } else {
-            await conn.sendMessage(from, {
-                text: `*🎬 VIDEO DOWNLOADER*\n\n🔗 *URL:* ${url}\n\n*Status:* ⏳ Fetching download link...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
-            }, { quoted: mek });
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 🚀 XRizal API Call
-        // ═══════════════════════════════════════════════════════════
-        const apiUrl = `https://api.xrizal.my.id/api/downloader/ytmp4?url=${encodeURIComponent(url)}`;
-        const response = await axios.get(apiUrl, { 
-            headers: { 'Accept': 'application/json' },
-            timeout: 60000 
-        });
-
-        const resData = response.data;
-        console.log("📊 XRizal API Response:", JSON.stringify(resData, null, 2));
-
-        if (!resData.status || !resData.result) {
-            throw new Error('Failed to fetch video from API.');
-        }
-
-        const data = resData.result;
-
-        // Get video from video_normal array (has audio + video)
-        const videoDownloadUrl = data.video_normal && data.video_normal.length > 0 
-            ? data.video_normal[0].url 
-            : null;
-
-        if (!videoDownloadUrl) throw new Error('Video download link not found.');
-
-        // ═══════════════════════════════════════════════════════════
-        // 🔧 FIX: Download to buffer first (URL expires quickly!)
-        // ═══════════════════════════════════════════════════════════
-        await conn.sendMessage(from, {
-            text: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${data.title || '-'}\n⏳ *Duration:* ${data.duration || '-'}\n\n*Status:* ⬇️ Downloading video to server...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
-        }, { quoted: mek });
-
-        // Download video to buffer (before URL expires!)
-        console.log("⬇️ Downloading video to buffer...");
-        const videoResponse = await axios.get(videoDownloadUrl, {
-            responseType: 'arraybuffer',
-            timeout: 120000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://www.youtube.com/'
+        // ── Search or extract URL ──
+        if (q.startsWith('http://') || q.startsWith('https://')) {
+            if (!q.includes("youtube.com") && !q.includes("youtu.be")) {
+                return await reply("❌ Please provide a valid YouTube URL!");
             }
-        });
+            videoId = getVideoId(q);
+            if (!videoId) return await reply("❌ Invalid YouTube URL!");
+            
+            try {
+                const searchFromUrl = await yts({ videoId });
+                videoInfo = searchFromUrl;
+            } catch (searchErr) {
+                console.log('[VIDEO] yts failed, using URL directly:', searchErr.message);
+                videoInfo = { 
+                    title: q,
+                    thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+                    author: { name: 'YouTube' },
+                    timestamp: 'N/A',
+                    description: 'N/A',
+                    duration: 0
+                };
+            }
+            url = q;
+        } else {
+            let searchQuery = q;
+            let searchResults = null;
+            
+            try {
+                searchResults = await yts(searchQuery);
+            } catch (e) {
+                console.log('[VIDEO] Search failed:', e.message);
+            }
+            
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
+                try {
+                    searchResults = await yts(q + " video");
+                } catch (e) {
+                    console.log('[VIDEO] Second search failed:', e.message);
+                }
+            }
+            
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
+                return await reply("❌ No video found! Try a different search term.");
+            }
+            
+            videoInfo = searchResults.videos[0];
+            url = videoInfo.url;
+            videoId = getVideoId(url);
+        }
 
-        const videoBuffer = Buffer.from(videoResponse.data);
-        console.log(`✅ Video downloaded to buffer: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+        function getVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
 
-        // Send video from buffer
+        // ── Check if video is long (> 15 minutes) ──
+        const durationSeconds = videoInfo.duration || 0;
+        const durationMinutes = Math.floor(durationSeconds / 60);
+        if (durationMinutes > 15) {
+            isLongVideo = true;
+            console.log(`[VIDEO] Long video detected: ${durationMinutes} minutes`);
+        }
+
+        // ── Clean description ──
+        function cleanDescription(text) {
+            if (!text) return 'N/A';
+            return text.replace(/https?:\/\/[^\s]+/g, '').trim() || 'N/A';
+        }
+
+        // ── Format duration ──
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+            if (mins > 0) return `${mins}m ${secs}s`;
+            return `${secs}s`;
+        }
+
+        // ── Send initial info ──
+        const durationDisplay = formatDuration(durationSeconds);
+        const caption = `*🎬 VIDEO DOWNLOADER*\n\n` +
+                        `📌 *Title:* ${videoInfo.title || 'Unknown'}\n` +
+                        `📝 *Description:* ${cleanDescription(videoInfo.description)}\n` +
+                        `📺 *Channel:* ${videoInfo.author?.name || 'Unknown'}\n` +
+                        `🕒 *Duration:* ${durationDisplay}\n` +
+                        `${isLongVideo ? '⚠️ *Long video detected (>15 min)*\n' : ''}` +
+                        `⏳ *Status:* Fetching download link...\n\n` +
+                        `*© Powered by ERFAN-MD*`;
+
         await conn.sendMessage(from, {
-            video: videoBuffer,
-            mimetype: 'video/mp4',
-            caption: `🎬 *${data.title || 'Video'}*\n\n⏳ *Duration:* ${data.duration || '-'}\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+            image: { url: videoInfo.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` },
+            caption
         }, { quoted: mek });
 
-        await conn.sendMessage(from, { react: { text: '🔥', key: m.key } });
+        // ── API Priority List (Updated with GiftedTech & JerryCoder) ──
+        const encodedUrl = encodeURIComponent(url);
+        let downloadUrl = null;
+        let usedApi = '';
+        let videoTitle = videoInfo.title || 'Video';
 
-    } catch (e) {
-        console.error(e);
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-        await reply(`❌ *Error:* ${e.message}`);
-    }
-});
+        // Only use APIs that can handle long videos
+        const apis = [
+            { 
+                name: 'GiftedTech (dlmp4)', 
+                fn: async () => {
+                    const res = await axios.get(`https://api.giftedtech.co.ke/api/download/dlmp4?apikey=gifted&url=${encodedUrl}`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.status === 200 && res.data?.success && res.data?.result?.download_url) {
+                        return res.data.result.download_url;
+                    }
+                    throw new Error('GiftedTech dlmp4 failed');
+                }
+            },
+            { 
+                name: 'GiftedTech (ytv)', 
+                fn: async () => {
+                    const res = await axios.get(`https://api.giftedtech.co.ke/api/download/ytv?apikey=gifted&url=${encodedUrl}`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.status === 200 && res.data?.success && res.data?.result?.download_url) {
+                        return res.data.result.download_url;
+                    }
+                    throw new Error('GiftedTech ytv failed');
+                }
+            },
+            { 
+                name: 'GiftedTech (ytvv2)', 
+                fn: async () => {
+                    const res = await axios.get(`https://api.giftedtech.co.ke/api/download/ytvv2?apikey=gifted&url=${encodedUrl}`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.status === 200 && res.data?.success && res.data?.result?.download_url) {
+                        return res.data.result.download_url;
+                    }
+                    throw new Error('GiftedTech ytvv2 failed');
+                }
+            },
+            { 
+                name: 'JerryCoder', 
+                fn: async () => {
+                    const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/down/ytmp4?url=${encodedUrl}`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.status === "success" && res.data?.url) {
+                        return res.data.url;
+                    }
+                    throw new Error('JerryCoder failed');
+                }
+            },
+            { 
+                name: 'Faa', 
+                fn: async () => {
+                    const res = await axios.get(`https://api-faa.my.id/faa/ytmp4?url=${encodedUrl}`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.status && res.data?.result?.download_url) {
+                        return res.data.result.download_url;
+                    }
+                    throw new Error('Faa failed');
+                }
+            }
+        ];
 
-// ═══════════════════════════════════════════════════════════
-// 🎵 AUDIO COMMAND - cnv.cx (Working)
-// ═══════════════════════════════════════════════════════════
-
-cmd({
-    pattern: "play2",
-    alias: ["ytaudio", "ytmp32"],
-    desc: "Download YouTube audio with search support",
-    category: "download",
-    react: "🎵",
-    filename: __filename
-}, async (conn, mek, m, { from, q, reply }) => {
-    try {
-        if (!q) return await reply(`*Example :* .yta2 https://youtu.be/JiEW1agPqNY\nOr: .yta2 Alan Walker Faded`)
-
-        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } })
-
-        let url = q;
-        let videoInfo = null;
-        let format = '128k';
-
-        // Check for quality argument
-        const parts = q.trim().split(/\s+/);
-        const lastPart = parts[parts.length - 1];
-        if (['128k', '320k'].includes(lastPart)) {
-            format = lastPart;
-            url = parts.slice(0, -1).join(' ');
+        // ── Try each API ──
+        for (const api of apis) {
+            try {
+                console.log(`[VIDEO] Trying ${api.name}...`);
+                const link = await api.fn();
+                
+                if (link) {
+                    downloadUrl = link;
+                    usedApi = api.name;
+                    console.log(`[VIDEO] ✅ ${api.name} returned a link`);
+                    break;
+                }
+            } catch (e) {
+                console.log(`[VIDEO] ❌ ${api.name} failed:`, e.message);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+            }
         }
 
-        if (!url.match(/(youtube\.com|youtu\.be)/gi)) {
-            const search = await yts(url);
-            videoInfo = search.videos[0];
-            if (!videoInfo) return await reply("❌ No video results found!");
-            url = videoInfo.url;
+        if (!downloadUrl) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return await reply("❌ All APIs failed! Please try again later.\n\n💡 For long videos, try using a direct YouTube URL.");
+        }
 
+        // ── Download video with streaming support ──
+        try {
+            console.log(`[VIDEO] Downloading from ${usedApi}... (This may take a while for long videos)`);
+            
+            // Increase timeout for long videos
+            const downloadTimeout = isLongVideo ? 600000 : 180000; // 10 min for long, 3 min for short
+            
+            const videoBuffer = await axios.get(downloadUrl, {
+                responseType: 'arraybuffer',
+                timeout: downloadTimeout,
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': '*/*',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive'
+                }
+            });
+
+            const fileSizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
+            console.log(`[VIDEO] Downloaded ${fileSizeMB} MB from ${usedApi}`);
+
+            // Check if file is valid (not HTML error page)
+            const bufferString = videoBuffer.data.toString('utf-8', 0, 500);
+            if (bufferString.includes('<!DOCTYPE') || bufferString.includes('<html>')) {
+                console.log(`[VIDEO] ⚠️ ${usedApi} returned HTML instead of video`);
+                await reply(`❌ ${usedApi} returned an error page. Trying next API...`);
+                
+                // Try next API if available
+                const remainingApis = apis.filter(a => a.name !== usedApi);
+                for (const api of remainingApis) {
+                    try {
+                        console.log(`[VIDEO] Retry with ${api.name}...`);
+                        const link = await api.fn();
+                        if (link) {
+                            const retryBuffer = await axios.get(link, {
+                                responseType: 'arraybuffer',
+                                timeout: downloadTimeout,
+                                maxContentLength: Infinity,
+                                maxBodyLength: Infinity,
+                                headers: { 'User-Agent': 'Mozilla/5.0' }
+                            });
+                            if (retryBuffer.data.length > 100000) {
+                                await conn.sendMessage(from, {
+                                    video: Buffer.from(retryBuffer.data),
+                                    caption: `🎬 *${videoTitle}*\n\n📥 Downloaded via: ${api.name} ✅\n*© Powered by ERFAN-MD*`
+                                }, { quoted: mek });
+                                await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+                                return;
+                            }
+                        }
+                    } catch (retryErr) {
+                        console.log(`[VIDEO] ❌ ${api.name} retry failed:`, retryErr.message);
+                    }
+                }
+                return await reply("❌ All APIs returned error pages. Try again later.");
+            }
+
+            // ── Send the video ──
             await conn.sendMessage(from, {
-                image: { url: videoInfo.thumbnail },
-                caption: `*🎵 AUDIO DOWNLOADER*\n\n🎞️ *Title:* ${videoInfo.title}\n📺 *Channel:* ${videoInfo.author.name}\n🕒 *Duration:* ${videoInfo.timestamp}\n📊 *Quality:* ${format}\n\n*Status:* ⏳ Downloading...\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
+                video: Buffer.from(videoBuffer.data),
+                caption: `🎬 *${videoTitle}*\n\n📥 Downloaded via: ${usedApi} ✅\n📦 Size: ${fileSizeMB} MB\n*© Powered by ERFAN-MD*`
             }, { quoted: mek });
+
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+            console.log(`[VIDEO] ✅ Successfully sent video (${fileSizeMB} MB)`);
+
+        } catch (dlErr) {
+            console.error('[VIDEO] Download error:', dlErr.message);
+            
+            if (dlErr.code === 'ECONNABORTED') {
+                await reply(`❌ Download timed out! The video might be too long.\n\n💡 Try using a direct YouTube URL or a shorter video.`);
+            } else if (dlErr.response?.status === 404) {
+                await reply(`❌ ${usedApi} link expired or not found. Try again.`);
+            } else {
+                await reply(`❌ Failed to download video from ${usedApi}. Try again later.`);
+            }
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
         }
 
-        yt.log(`Downloading audio: ${url} | Format: ${format}`)
-        let { buffer, fileName } = await yt.download(url, format)
-
-        await conn.sendMessage(from, { 
-            audio: buffer, 
-            mimetype: 'audio/mpeg', 
-            fileName,
-            caption: `🎵 *Audio Downloaded*\n\n📊 *Quality:* ${format}\n\n*© ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʀғᴀɴ-ᴍᴅ*`
-        }, { quoted: mek })
-
-        await conn.sendMessage(from, { react: { text: '🔥', key: m.key } })
-
     } catch (e) {
-        console.error(e)
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } })
-        await reply(`❌ *Error:* ${e.message}`)
+        console.error("❌ Error in .video command:", e);
+        await reply(`⚠️ Error: ${e.message || 'Something went wrong!'}`);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
