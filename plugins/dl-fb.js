@@ -16,7 +16,7 @@ const ZIAUL_API = "https://api.ziaul.my.id/api/downloader/fbdownload";
 
 cmd({
     pattern: "facebook",
-    alias: ["fb", "fbdl"],
+    alias: ["fb", "fbd"],
     desc: "Download Facebook video",
     category: "download",
     react: "📘",
