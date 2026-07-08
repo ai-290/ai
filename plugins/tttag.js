@@ -8,8 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 cmd({
-    pattern: "tt",
-    alias: ["tiktok", "hashtag", "tttag"],
+    pattern: "hashtag",
+    alias: ["tiktoktag", "hashtag", "tttag"],
     desc: "Analyze TikTok hashtags and get trending data",
     category: "tools",
     react: "🔍",
