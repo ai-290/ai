@@ -1,14 +1,14 @@
+
 import { cmd } from '../command.js';
 import axios from 'axios';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 
-const API_BASE_URLS = [
-    'https://ai-sev585.vercel.app/api'
-    
-];
+// Single API Base URL
+const API_BASE_URL = 'https://ai-sev585.vercel.app/api';
 
+// Status emoji function
 function getCountStatus(count) {
     if (count === 50) return '🔴';
     if (count >= 40) return '🟣';
@@ -18,15 +18,7 @@ function getCountStatus(count) {
     return '🟢';
 }
 
-async function getWorkingApiBase(testPath = '/servers') {
-    for (const base of API_BASE_URLS) {
-        try {
-            await axios.get(`${base}${testPath}`, { timeout: 5000 });
-            return base;
-        } catch (_) {}
-    }
-    throw new Error('No working API base found');
-}
+// ==================== STATUS COMMAND ====================
 
 cmd(
     {
@@ -38,12 +30,13 @@ cmd(
         use: '.status',
         filename: __filename
     },
-    async (conn, mek, m, { from, reply }) => {
+    async (conn, mek, m, { reply }) => {
         try {
             await reply('📡 Checking server status...');
 
-            const apiBase = await getWorkingApiBase('/servers');
-            const serversResponse = await axios.get(`${apiBase}/servers`, { timeout: 5000 });
+            const serversResponse = await axios.get(`${API_BASE_URL}/servers`, {
+                timeout: 5000
+            });
 
             if (!serversResponse.data || !serversResponse.data.servers) {
                 return reply('❌ Failed to fetch server list.');
@@ -60,7 +53,9 @@ cmd(
                 const server = servers[i];
 
                 try {
-                    const statusResponse = await axios.get(`${apiBase}/status/${server.id}`, { timeout: 5000 });
+                    const statusResponse = await axios.get(`${API_BASE_URL}/status/${server.id}`, {
+                        timeout: 5000
+                    });
 
                     if (statusResponse.data && !statusResponse.data.error) {
                         const count = statusResponse.data.count || 0;
@@ -120,6 +115,72 @@ cmd(
         } catch (error) {
             console.error('Status command error:', error);
             await reply('❌ Error checking server status. Make sure your API is running.');
+        }
+    }
+);
+
+// ==================== PAIR COMMAND ====================
+
+cmd(
+    {
+        pattern: 'pair',
+        alias: ['getpair', 'clonebot'],
+        react: '✅',
+        desc: 'Get pairing code for erfan-MD bot',
+        category: 'owner',
+        use: '.pair 923306137477',
+        filename: __filename
+    },
+    async (conn, mek, m, { q, senderNumber, reply }) => {
+        try {
+            const phoneNumber = q
+                ? q.trim().replace(/[^0-9]/g, '')
+                : senderNumber.replace(/[^0-9]/g, '');
+
+            if (!phoneNumber || phoneNumber.length < 10 || phoneNumber.length > 15) {
+                return await reply('❌ Please provide a valid phone number without +\nExample: .pair 923306137477');
+            }
+
+            const randomResponse = await axios.get(`${API_BASE_URL}/random`, {
+                timeout: 5000
+            });
+
+            if (!randomResponse.data || !randomResponse.data.server) {
+                return await reply('❌ Failed to get available server. Please try again.');
+            }
+
+            const selectedServer = randomResponse.data.server;
+
+            const response = await axios.get(`${API_BASE_URL}/code`, {
+                params: {
+                    server: selectedServer,
+                    number: phoneNumber
+                },
+                timeout: 20000
+            });
+
+            if (!response.data || !response.data.code) {
+                return await reply('❌ Failed to retrieve pairing code. Please try again later.');
+            }
+
+            const pairingCode = response.data.code;
+
+            await reply(
+                `🔐 *ERFAN-MD PAIR CODE*\n\n` +
+                `${pairingCode}\n\n` +
+                `Server: ${selectedServer}\n\n` +
+                `📱 *How to use:*\n` +
+                `1. Open WhatsApp on your phone\n` +
+                `2. Go to Linked Devices\n` +
+                `3. Tap on Link Device\n` +
+                `4. Enter this code when prompted`
+            );
+
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await reply(pairingCode);
+        } catch (error) {
+            console.error('Pair command error:', error);
+            await reply('❌ An error occurred while getting pairing code. Please try again later.');
         }
     }
 );
