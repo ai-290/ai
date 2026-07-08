@@ -3,113 +3,199 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { cmd } from '../command.js';
 import axios from 'axios';
+import yts from 'yt-search';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ERFAN-MD
+const AXIOS_DEFAULTS = {
+    timeout: 60000,
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+};
+
+async function tryRequest(getter, attempts = 3) {
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await getter();
+        } catch (err) {
+            lastError = err;
+            if (attempt < attempts) {
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+        }
+    }
+    throw lastError;
+}
+
+// Yupra API - Primary (Working)
+async function getYupraVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.success && res?.data?.data?.download_url) {
+        return {
+            download: res.data.data.download_url,
+            title: res.data.data.title,
+            thumbnail: res.data.data.thumbnail
+        };
+    }
+    throw new Error('Yupra returned no download');
+}
+
+// EliteProTech API - Fallback
+async function getEliteProTechVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.success && res?.data?.downloadURL) {
+        return {
+            download: res.data.downloadURL,
+            title: res.data.title
+        };
+    }
+    throw new Error('EliteProTech ytdown returned no download');
+}
+
+// Okatsu API - Fallback
+async function getOkatsuVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.result?.mp4) {
+        return { download: res.data.result.mp4, title: res.data.result.title };
+    }
+    throw new Error('Okatsu ytmp4 returned no mp4');
+}
 
 cmd({
-    pattern: "facebook",
-    alias: ["fb", "fbdl", "fbdown"],
-    desc: "Download Facebook videos and send them on WhatsApp",
+    pattern: "videoxx",
+    alias: ["vid", "ytvideo", "ytv"],
+    desc: "Download YouTube videos",
     category: "downloader",
     react: "🎥",
     filename: __filename
 },
 async (conn, mek, m, { from, q, reply, react }) => {
     try {
-
-        // Check URL
-        if (!q) {
-            return reply(
-                "❌ Please provide a Facebook Video URL.\n\nExample:\n.facebook https://www.facebook.com/share/r/xxxxx/"
-            );
+        const searchQuery = q.trim();
+        
+        if (!searchQuery) {
+            return reply('❌ Please provide a YouTube URL or search query.\n\nExample:\n.video Despacito\nor\n.video https://youtu.be/xxxxx');
         }
 
         // React loading
         await react("⬇️");
 
-        // New Delirius API URL
-        const apiUrl = `https://api.delirius.store/download/facebook?url=${encodeURIComponent(q)}`;
-
-        // Fetch API Data
-        const { data } = await axios.get(apiUrl);
-
-        // Validate response
-        if (!data || !data.status || !data.list || !data.list.length) {
-            await react("❌");
-            return reply("❌ Failed to fetch Facebook video. Try another link.");
+        // Determine if input is a YouTube link
+        let videoUrl = '';
+        let videoTitle = '';
+        let videoThumbnail = '';
+        
+        if (searchQuery.startsWith('http://') || searchQuery.startsWith('https://')) {
+            videoUrl = searchQuery;
+        } else {
+            // Search YouTube for the video
+            await reply('🔍 Searching YouTube...');
+            const { videos } = await yts(searchQuery);
+            
+            if (!videos || videos.length === 0) {
+                await react("❌");
+                return reply('❌ No videos found!');
+            }
+            
+            videoUrl = videos[0].url;
+            videoTitle = videos[0].title;
+            videoThumbnail = videos[0].thumbnail;
         }
 
-        // Get the Best quality video from 'list' array
-        const media = data.list[0];
-
-        // Validate media URL
-        if (!media.url) {
+        // Validate YouTube URL
+        let urls = videoUrl.match(/(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|playlist\?list=)?)([a-zA-Z0-9_-]{11})/gi);
+        if (!urls) {
             await react("❌");
-            return reply("❌ Video download URL not found.");
+            return reply('❌ This is not a valid YouTube link!');
         }
 
-        // Send info message
-        await reply(
-            `📘 *FACEBOOK DOWNLOADER*\n\n` +
-            `📹 *Quality:* ${media.quality || 'HD'}\n` +
-            `👤 *API by:* ${data.creator || 'Delirius'}\n\n` +
-            `📥 Downloading video... Please wait.`
-        );
-
-        // Download media buffer with proper headers
-        const response = await axios.get(media.url, {
-            responseType: 'arraybuffer',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': 'https://www.facebook.com/',
-                'Origin': 'https://www.facebook.com'
-            },
-            timeout: 180000, // 3 minutes
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity,
-            maxRedirects: 5
-        });
-
-        // Check if download was successful
-        if (!response.data || response.data.length === 0) {
-            await react("❌");
-            return reply("❌ Failed to download video. The file might be empty.");
+        // Send thumbnail immediately
+        try {
+            const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
+            const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : undefined);
+            const captionTitle = videoTitle || searchQuery;
+            
+            if (thumb) {
+                await conn.sendMessage(from, {
+                    image: { url: thumb },
+                    caption: `📹 *${captionTitle}*\n\n⏳ Downloading video... Please wait.`
+                }, { quoted: mek });
+            }
+        } catch (e) { 
+            console.log('[VIDEO] Thumbnail error:', e?.message || e); 
         }
 
-        // Send video
+        // Try multiple APIs with fallback chain: Yupra -> EliteProTech -> Okatsu
+        let videoData;
+        let downloadSuccess = false;
+        
+        const apiMethods = [
+            { name: 'Yupra', method: () => getYupraVideoByUrl(videoUrl) },
+            { name: 'EliteProTech', method: () => getEliteProTechVideoByUrl(videoUrl) },
+            { name: 'Okatsu', method: () => getOkatsuVideoByUrl(videoUrl) }
+        ];
+        
+        // Try each API until success
+        for (const apiMethod of apiMethods) {
+            try {
+                videoData = await apiMethod.method();
+                const videoUrl_check = videoData.download || videoData.dl || videoData.url;
+                
+                if (!videoUrl_check) {
+                    console.log(`${apiMethod.name} returned no download URL, trying next API...`);
+                    continue;
+                }
+                
+                downloadSuccess = true;
+                console.log(`✅ ${apiMethod.name} API succeeded!`);
+                break;
+            } catch (apiErr) {
+                console.log(`❌ ${apiMethod.name} API failed:`, apiErr.message);
+                continue;
+            }
+        }
+        
+        // If all APIs failed
+        if (!downloadSuccess || !videoData) {
+            await react("❌");
+            throw new Error('All download sources failed. The content may be unavailable or blocked.');
+        }
+
+        // Send video directly using the download URL
         await conn.sendMessage(from, {
-            video: Buffer.from(response.data),
+            video: { url: videoData.download || videoData.dl || videoData.url },
             mimetype: 'video/mp4',
-            caption: `✅ *Video Downloaded Successfully!*\n\n📹 *Quality:* ${media.quality}\n🎬 *Facebook Video*\n\n> *IT'S ERFAN AHMAD*`,
-            fileName: `facebook_video_${Date.now()}.mp4`
+            fileName: `${(videoData.title || videoTitle || 'video').replace(/[^\w\s-]/g, '')}.mp4`,
+            caption: `✅ *Video Downloaded Successfully!*\n\n🎬 *Title:* ${videoData.title || videoTitle || 'Video'}\n\n> *IT'S ERFAN AHMAD*`
         }, { quoted: mek });
 
         // Success reaction
         await react("✅");
 
-    } catch (e) {
-
-        console.log("Facebook Downloader Error:", e.message);
-        console.log("Full Error:", e);
-
+    } catch (error) {
+        console.error('[VIDEO] Command Error:', error?.message || error);
+        
         await react("❌");
-
-        // More detailed error message
-        if (e.response) {
-            reply(`❌ Download Error: ${e.response.status} - ${e.response.statusText}\n\nThe CDN server rejected the request.`);
-        } else if (e.code === 'ECONNABORTED') {
-            reply("❌ Download timeout! The video is too large or connection is slow.");
-        } else if (e.code === 'ERR_BAD_REQUEST') {
-            reply("❌ Invalid video URL. Please try another Facebook link.");
-        } else {
-            reply(
-                `❌ An error occurred while downloading Facebook video.\n\nError: ${e.message}\n\nPlease try again later.`
-            );
+        
+        // Specific error messages
+        let errorMessage = '❌ Failed to download video.';
+        if (error.message && error.message.includes('blocked')) {
+            errorMessage = '❌ Download blocked. Content may be unavailable in your region.';
+        } else if (error.response?.status === 451 || error.status === 451) {
+            errorMessage = '❌ Content unavailable (451). Legal restrictions or regional blocking.';
+        } else if (error.message && error.message.includes('All download sources failed')) {
+            errorMessage = '❌ All download sources failed. The content may be unavailable or blocked.';
+        } else if (error.message) {
+            errorMessage = `❌ Download failed: ${error.message}`;
         }
+        
+        reply(errorMessage);
     }
 });
