@@ -1,114 +1,92 @@
 // ERFAN-MD
 import { fileURLToPath } from 'url';
 import path from 'path';
-import axios from 'axios';
 import { cmd } from '../command.js';
-import config from '../config.js';
+import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ═══════════════════════════════════════════════════════════
-// 📘 FACEBOOK COMMAND - ZIAUL API (FREE, NO KEY)
-// ═══════════════════════════════════════════════════════════
-
-const ZIAUL_API = "https://api.ziaul.my.id/api/downloader/fbdownload";
+// ERFAN-MD
 
 cmd({
     pattern: "facebook",
-    alias: ["fb", "fbd"],
-    desc: "Download Facebook video",
-    category: "download",
-    react: "📘",
+    alias: ["fb", "fbdl", "fbdown"],
+    desc: "Download Facebook videos and send them on WhatsApp",
+    category: "downloader",
+    react: "🎥",
     filename: __filename
-}, async (conn, mek, m, { from, q, reply, userConfig }) => {
+},
+async (conn, mek, m, { from, q, reply, react }) => {
     try {
-        // Validate input
+
+        // Check URL
         if (!q) {
-            return await reply(
-                `📘 *Facebook Downloader*\n\n` +
-                `Please provide a Facebook video link!\n\n` +
-                `*Example:*\n` +
-                `.fb https://www.facebook.com/share/r/1EvyPj6vqs/\n` +
-                `.fb https://www.facebook.com/watch/?v=1234567890`
+            return reply(
+                "❌ Please provide a Facebook Video URL.\n\nExample:\n.facebook https://www.facebook.com/share/r/xxxxx/"
             );
         }
 
-        // Validate Facebook URL
-        if (!q.match(/(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.watch|fb\.com)/i)) {
-            return await reply('⚠️ Please send a valid Facebook link!');
+        // React loading
+        await react("⬇️");
+
+        // New Delirius API URL
+        const apiUrl = `https://api.delirius.store/download/facebook?url=${encodeURIComponent(q)}`;
+
+        // Fetch API Data
+        const { data } = await axios.get(apiUrl);
+
+        // Validate response
+        if (!data || !data.status || !data.list || !data.list.length) {
+            await react("❌");
+            return reply("❌ Failed to fetch Facebook video. Try another link.");
         }
 
-        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
-        await reply('⏳ *Fetching video from Facebook...*');
+        // Get the Best quality video from 'list' array
+        const media = data.list[0];
 
-        // Call ZiaUl API
-        const { data } = await axios.get(ZIAUL_API, {
-            params: { url: q },
-            headers: {
-                'accept': '*/*',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 30000
+        // Validate media URL
+        if (!media.url) {
+            await react("❌");
+            return reply("❌ Video download URL not found.");
+        }
+
+        // Send info message
+        await reply(
+            `📘 *FACEBOOK DOWNLOADER*\n\n` +
+            `🎬 *Title:* Facebook Video\n` +
+            `📹 *Quality:* ${media.quality || 'HD'}\n` +
+            `🖼 *Thumbnail:* ${data.thumb ? 'Available' : 'Not Found'}\n` +
+            `👤 *API by:* ${data.creator || 'Delirius'}\n\n` +
+            `📥 Downloading video... Please wait.`
+        );
+
+        // Download media buffer
+        const response = await axios.get(media.url, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
         });
-
-        // Check API response
-        if (!data || !data.status || !data.data) {
-            throw new Error('Invalid response from API.');
-        }
-
-        const result = data.data;
-        const title = result.title || 'Facebook Video';
-        const thumbnail = result.thumbnail;
-        const duration = result.duration || 'N/A';
-
-        // Get best quality download URL
-        let videoUrl = result.best_quality;
-        let quality = 'Best';
-
-        // If best_quality not available, use first download option
-        if (!videoUrl && result.downloads && result.downloads.length > 0) {
-            videoUrl = result.downloads[0].url;
-            quality = result.downloads[0].quality || 'HD';
-        }
-
-        if (!videoUrl) {
-            throw new Error('No download URL found in API response.');
-        }
-
-        const BOT_NAME = userConfig?.BOT_NAME || config.BOT_NAME || "ERFAN-MD";
-
-        const caption = `┌˚₊ ๑│ ғ ᴀ ᴄ ᴇ ʙ ᴏ ᴏ ᴋ  ᴅ ʟ │๑˚₊ 📘
-┇ 
-│ 🎬 *Title:* ${title.substring(0, 50)}${title.length > 50 ? '...' : ''}
-│ ⏱️ *Duration:* ${duration}
-│ 🌟 *Quality:* ${quality}
-┇ 
-└˚₊ ๑ ────────────── ๑˚₊
-> © ${BOT_NAME}`;
 
         // Send video
         await conn.sendMessage(from, {
-            video: { url: videoUrl },
+            video: Buffer.from(response.data),
             mimetype: 'video/mp4',
-            caption: caption,
-            ...(thumbnail ? { jpegThumbnail: thumbnail } : {})
+            caption: `✅ *Video Downloaded Successfully!*\n\n📹 *Quality:* ${media.quality}\n🎬 *Facebook Video*\n\n> *IT'S ERFAN AHMAD*`
         }, { quoted: mek });
 
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        // Success reaction
+        await react("✅");
 
     } catch (e) {
-        console.error("❌ Error in .facebook:", e);
-        
-        let errorMsg = e.message || 'Unknown error';
-        
-        if (errorMsg.includes('ENOTFOUND') || errorMsg.includes('ECONNREFUSED')) {
-            errorMsg = 'API server is down. Please try again later.';
-        } else if (errorMsg.includes('timeout')) {
-            errorMsg = 'Request timed out. The video might be too large.';
-        }
 
-        await reply(`┌˚₊ ๑│ s ʏ s ᴛ ᴇ ᴍ  ᴇ ʀ ʀ ᴏ ʀ │๑˚₊ ❌\n┇ Failed to download Facebook video:\n┇ ${errorMsg}\n└˚₊ ๑ ────────────── ๑˚₊\n> © ERFAN-MD`);
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        console.log("Facebook Downloader Error:", e);
+
+        await react("❌");
+
+        reply(
+            "❌ An error occurred while downloading Facebook video.\nPlease try again later."
+        );
     }
 });
