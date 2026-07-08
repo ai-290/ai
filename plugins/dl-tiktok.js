@@ -9,137 +9,135 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ═══════════════════════════════════════════════════════════
-// 🎵 TIKTOK COMMAND - NANZZ API (FIXED)
+// 🎵 TIKTOK COMMAND - ERINE STYLE IN ERFAN STRUCTURE
 // ═══════════════════════════════════════════════════════════
 
 const TIKTOK_APIS = [
     {
-        name: "Nanzz",
-        url: (ttUrl) => `https://api-nanzz.my.id/docs/api/downloader/tiktokv2.php?url=${encodeURIComponent(ttUrl)}`,
-        // FIXED: More robust checkResponse
-        checkResponse: (data) => {
-            console.log("🔍 Checking response:", JSON.stringify(data, null, 2));
-            return data && 
-                   (data.status === true || data.status === "true") && 
-                   data.result && 
-                   typeof data.result.video_tanpa_watermark === "string" &&
-                   data.result.video_tanpa_watermark.length > 0;
-        },
-        getVideoUrl: (data) => data.result.video_tanpa_watermark,
-        getAudioUrl: (data) => data.result.audio_mp3,
-        getCaption: (data) => data.result.caption,
-        getAuthor: (data) => data.result.author
+        name: "TikWM",
+        url: (ttUrl) => `https://tikwm.com/api/?url=${encodeURIComponent(ttUrl)}&hd=1`,
+        checkResponse: (data) => data?.code === 0 && data?.data,
+        getData: (data) => data.data,
+        searchUrl: (query) => `https://tikwm.com/api/feed/search?keywords=${encodeURIComponent(query)}&count=1`
     }
 ];
 
+function formatNumber(num = 0) {
+    return num.toLocaleString();
+}
+
+function formatDuration(sec = 0) {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+}
+
 cmd({
     pattern: "tiktok",
-    alias: ["tt", "ttdl"],
+    alias: ["tt", "ttdl", "ttsearch"],
     desc: "Download TikTok video",
     category: "download",
     react: "🎵",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply, userConfig }) => {
     try {
-        if (!q) return await reply("🎯 Please provide a valid TikTok link!\n\nExample: `.tt link`");
+        if (!q) return await reply(`❌ Link ya search query kahan hai?\n\n*Example:*\n.tt https://vt.tiktok.com/xxxx\n.tt erine jkt48 edit`);
 
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
 
-        const apiPromises = TIKTOK_APIS.map(api => 
-            axios.get(api.url(q), { 
-                timeout: 30000,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        let url = q;
+        let searchUsed = false;
+
+        // Agar link nahi hai to search karo
+        if (!/^https?:\/\//i.test(q)) {
+            try {
+                const { data } = await axios.get(
+                    TIKTOK_APIS[0].searchUrl(q),
+                    { timeout: 20000 }
+                );
+                
+                if (!data || data.code !== 0 || !data.data?.videos?.length) {
+                    throw new Error('Video nahi mila search se.');
                 }
-            })
-            .then(response => ({ 
-                success: true, 
-                api: api, 
-                data: response.data 
-            }))
-            .catch(error => ({ 
-                success: false, 
-                api: api, 
-                error: error.message 
-            }))
-        );
-
-        const results = await Promise.all(apiPromises);
-
-        let videoUrl = null;
-        let audioUrl = null;
-        let caption = "";
-        let author = "Unknown";
-        let successApi = "";
-        let errors = [];
-
-        for (const result of results) {
-            if (result.success) {
-                const api = result.api;
-                const data = result.data;
-
-                console.log(`📊 ${api.name} Response:`, JSON.stringify(data, null, 2));
-
-                if (api.checkResponse(data)) {
-                    videoUrl = api.getVideoUrl(data);
-                    audioUrl = api.getAudioUrl(data) || null;
-                    caption = api.getCaption(data) || "";
-                    author = api.getAuthor(data) || "Unknown";
-                    successApi = api.name;
-                    console.log(`✅ ${api.name} API Success!`);
-                    break;
-                } else {
-                    // More detailed error for debugging
-                    errors.push(`${api.name}: Invalid response - status=${data?.status}, hasResult=${!!data?.result}, hasVideo=${!!data?.result?.video_tanpa_watermark}`);
-                }
-            } else {
-                errors.push(`${result.api.name}: ${result.error}`);
+                
+                const v = data.data.videos[0];
+                url = `https://www.tiktok.com/@${v.author.unique_id}/video/${v.video_id}`;
+                searchUsed = true;
+            } catch (searchErr) {
+                return await reply(`❌ Search failed: ${searchErr.message}`);
             }
         }
 
-        if (!videoUrl) {
-            return await reply(
-                `❌ *Download Failed!*\n\n` +
-                `📝 *Errors:*\n${errors.map(e => `• ${e}`).join('\n')}\n\n` +
-                `🔧 *Try:* Different link or try again later`
-            );
+        // Video data fetch karo
+        const { data } = await axios.get(
+            TIKTOK_APIS[0].url(url),
+            { timeout: 20000 }
+        );
+
+        if (!TIKTOK_APIS[0].checkResponse(data)) {
+            throw new Error('TikTok API se valid response nahi mila.');
         }
+
+        const res = TIKTOK_APIS[0].getData(data);
+
+        const title = res.title || '-';
+        const uploader = res.author?.nickname || res.author?.unique_id || '-';
+        const duration = formatDuration(res.duration);
+        const views = formatNumber(res.play_count || res.play || res.views || 0);
 
         const BOT_NAME = userConfig?.BOT_NAME || config.BOT_NAME || "ERFAN-MD";
 
-        // ═══════════════════════════════════════════════════════════
-        // 🎵 TIKTOK VIDEO SEND
-        // ═══════════════════════════════════════════════════════════
+        const caption = `┌˚₊ ๑│ ᴛ ɪ ᴋ ᴛ ᴏ ᴋ  ᴅ ʟ │๑˚₊ 🎵
+┇ 
+│ 📝 *Judul:* ${title}
+│ 👤 *Author:* ${uploader}
+│ ⏱️ *Durasi:* ${duration}
+│ 👁️ *Views:* ${views}
+┇ 
+└˚₊ ๑ ────────────── ๑˚₊
+> © ${BOT_NAME}`;
 
-        let videoCaption = `🎵 *TikTok Downloader*\n\n` +
-                           `👤 *Author:* ${author}\n\n`;
+        // Agar images/slides hain to unhe bhejo
+        if (Array.isArray(res.images) && res.images.length > 0) {
+            let total = res.images.length;
+            let index = 1;
 
-        if (caption) {
-            videoCaption += `📝 *Caption:* ${caption}\n\n`;
-        }
+            for (const img of res.images) {
+                await conn.sendMessage(
+                    from,
+                    {
+                        image: { url: img },
+                        caption: `┌˚₊ ๑│ ᴛ ɪ ᴋ ᴛ ᴏ ᴋ  s ʟ ɪ ᴅ ᴇ │๑˚₊ 📸\n┇\n│ 🖼️ *Slide:* ${index} / ${total}\n┇\n└˚₊ ๑ ────────────── ๑˚₊\n> © ${BOT_NAME}`
+                    },
+                    { quoted: mek }
+                );
+                index++;
+            }
 
-        videoCaption += `*Powered by ${BOT_NAME} ✅*`;
-
-        await conn.sendMessage(from, {
-            video: { url: videoUrl },
-            mimetype: 'video/mp4',
-            caption: videoCaption
-        }, { quoted: mek });
-
-        // Send audio separately if available
-        if (audioUrl) {
             await conn.sendMessage(from, {
-                audio: { url: audioUrl },
-                mimetype: 'audio/mpeg',
-                ptt: false
+                text: caption
             }, { quoted: mek });
+
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+            return;
         }
 
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        // Agar video hai to bhejo
+        if (res.play) {
+            await conn.sendMessage(from, {
+                video: { url: res.play },
+                mimetype: 'video/mp4',
+                caption: caption
+            }, { quoted: mek });
+
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        } else {
+            throw new Error('Video URL nahi mila.');
+        }
 
     } catch (e) {
         console.error("❌ Error in .tiktok:", e);
-        await reply("⚠️ *Error:* " + e.message);
+        await reply(`┌˚₊ ๑│ s ʏ s ᴛ ᴇ ᴍ  ᴇ ʀ ʀ ᴏ ʀ │๑˚₊ ❌\n┇ Gagal memproses video TikTok:\n┇ ${e.message || e}\n└˚₊ ๑ ────────────── ๑˚₊\n> © ERFAN-MD`);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
