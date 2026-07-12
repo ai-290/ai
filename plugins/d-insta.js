@@ -1,96 +1,158 @@
-// ERFAN-MD
 import { fileURLToPath } from 'url';
-import path from 'path';
-import { cmd } from '../command.js';
 import axios from 'axios';
+import { cmd } from '../command.js';
+
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+
+// ──────────────────────────────────────────────────────────────
+// 📸 INSTAGRAM DOWNLOADER — Betabotz API
+// ──────────────────────────────────────────────────────────────
+
+const LANN_API_KEY = 'YOUR_API_KEY_HERE'; // ⚠️ Apni Betabotz API key yahan daalein
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 cmd({
-    pattern: "instagram",
-    alias: ["ig", "instadl", "insta"],
-    desc: "Download Instagram videos and send them on WhatsApp",
+    pattern: "ig",
+    alias: ["instagram", "igdl", "instagramdl", "igstory"],
+    desc: "Instagram media download karein",
     category: "downloader",
-    react: "🎥",
+    react: "📸",
     filename: __filename
-},
-async (conn, mek, m, { from, q, reply, react }) => {
+}, async (conn, mek, m, { from, q, reply }) => {
+    if (!q) {
+        return await reply(`*Example:* .ig https://www.instagram.com/reel/DKPtUL_S9Nh/?igsh=MTE1dTVkb2E4NTFmcw==`);
+    }
+
+    if (!q.match(/instagram/gi)) {
+        return await reply(`Ye Instagram ka link nahi hai! Valid Instagram URL do.`);
+    }
+
+    await reply("⏳ Instagram se media le raha hoon...");
+
+    let res, isV2 = false;
+
     try {
-
-        // Check URL
-        if (!q) {
-            return reply(
-                "❌ Please provide an Instagram Reel/Post URL.\n\nExample:\n.instagram https://www.instagram.com/reel/xxxxx/"
+        // ── Pehle API v1 try karo ──
+        try {
+            const apiRes = await axios.get(
+                `https://api.betabotz.eu.org/api/download/igdowloader?url=${encodeURIComponent(q)}&apikey=${LANN_API_KEY}`,
+                { timeout: 30000, responseType: 'json' }
             );
+            res = apiRes.data;
+        } catch (err) {
+            // ── Agar v1 fail ho to v2 try karo ──
+            const apiRes2 = await axios.get(
+                `https://api.betabotz.eu.org/api/download/igdowloader-v2?url=${encodeURIComponent(q)}&apikey=${LANN_API_KEY}`,
+                { timeout: 30000, responseType: 'json' }
+            );
+            res = apiRes2.data;
+            isV2 = true;
         }
 
-        // React loading
-        await react("⬇️");
+        // ═══════════════════════════════════════════════════════
+        // 📥 V1 Response Handle
+        // ═══════════════════════════════════════════════════════
+        if (!isV2) {
+            if (!res.message || !Array.isArray(res.message) || res.message.length === 0) {
+                return await reply('Instagram se media nahi mila!');
+            }
 
-        // New API URL
-        const apiUrl = `https://api.nexray.eu.cc/downloader/instagram?url=${encodeURIComponent(q)}`;
+            const urls = [];
+            const seen = new Set();
 
-        // Fetch API Data
-        const { data } = await axios.get(apiUrl);
+            for (const item of res.message) {
+                if (!item || !item._url) continue;
+                if (seen.has(item._url)) continue;
+                seen.add(item._url);
+                urls.push(item._url);
+            }
 
-        // Validate response
-        if (!data || !data.status || !data.result || !data.result.length) {
-            await react("❌");
-            return reply("❌ Failed to fetch Instagram media. Try another link.");
+            if (urls.length === 0) {
+                return await reply('Instagram se media nahi mila!');
+            }
+
+            for (const url of urls) {
+                await sleep(3000);
+                const isVideo = url.match(/\.(mp4|mov|m4v|webm)(\?.*)?$/i);
+                if (isVideo) {
+                    await conn.sendMessage(from, {
+                        video: { url: url },
+                        caption: `*Instagram Downloader*`
+                    }, { quoted: mek });
+                } else {
+                    await conn.sendMessage(from, {
+                        image: { url: url },
+                        caption: `*Instagram Downloader*`
+                    }, { quoted: mek });
+                }
+            }
         }
 
-        // Get first media
-        const media = data.result[0];
+        // ═══════════════════════════════════════════════════════
+        // 📥 V2 Response Handle
+        // ═══════════════════════════════════════════════════════
+        else {
+            if (!res.result || !res.result.data || !res.result.data.xdt_shortcode_media) {
+                return await reply('Instagram se media nahi mila! (v2)');
+            }
 
-        // Validate media URL
-        if (!media.url) {
-            await react("❌");
-            return reply("❌ Media URL not found.");
+            const media = res.result.data.xdt_shortcode_media;
+            let caption = '';
+
+            if (media.edge_media_to_caption && media.edge_media_to_caption.edges && media.edge_media_to_caption.edges.length > 0) {
+                caption = media.edge_media_to_caption.edges[0].node.text;
+            }
+
+            const sendCaption = (index) => index === 0
+                ? (caption ? `*Instagram Downloader*\n${caption}` : '*Instagram Downloader*')
+                : '';
+
+            const items = [];
+
+            if (media.edge_sidecar_to_children && media.edge_sidecar_to_children.edges && media.edge_sidecar_to_children.edges.length > 0) {
+                const seen = new Set();
+                for (const edge of media.edge_sidecar_to_children.edges) {
+                    const node = edge.node;
+                    if (!node) continue;
+                    let url = null;
+                    if (node.is_video && node.video_url) url = node.video_url;
+                    else url = node.display_url || node.thumbnail_src || (node.display_resources && node.display_resources[0] && node.display_resources[0].src);
+                    if (!url || seen.has(url)) continue;
+                    seen.add(url);
+                    items.push({ url, isVideo: !!node.is_video, node });
+                }
+            }
+
+            if (items.length === 0) {
+                if (typeof media.has_audio !== 'undefined' && media.has_audio === true && media.video_url) {
+                    items.push({ url: media.video_url, isVideo: true, node: media });
+                } else {
+                    const img = media.display_url || media.thumbnail_src || (media.display_resources && media.display_resources[0] && media.display_resources[0].src);
+                    if (!img) return await reply('Instagram se media nahi mila!');
+                    items.push({ url: img, isVideo: false, node: media });
+                }
+            }
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                await sleep(3000);
+                if (item.isVideo) {
+                    await conn.sendMessage(from, {
+                        video: { url: item.url },
+                        caption: sendCaption(i)
+                    }, { quoted: mek });
+                } else {
+                    await conn.sendMessage(from, {
+                        image: { url: item.url },
+                        caption: sendCaption(i)
+                    }, { quoted: mek });
+                }
+            }
         }
-
-        // Send info message
-        await reply(
-            `🎬 *INSTAGRAM DOWNLOADER*\n\n` +
-            `📦 *Type:* ${media.type || 'Unknown'}\n` +
-            `🖼 *Thumbnail:* ${media.thumbnail ? 'Available' : 'Not Found'}\n` +
-            `⚡ *Response Time:* ${data.response_time || 'Fast'}\n\n` +
-            `📥 Downloading media... Please wait.`
-        );
-
-        // Download media buffer
-        const response = await axios.get(media.url, {
-            responseType: 'arraybuffer'
-        });
-
-        // Send video
-        if (media.type === "video") {
-
-            await conn.sendMessage(from, {
-                video: Buffer.from(response.data),
-                mimetype: 'video/mp4',
-                caption: `> *IT'S ERFAN AHMAD*`
-            }, { quoted: mek });
-
-        } else {
-
-            // Send image if image type
-            await conn.sendMessage(from, {
-                image: Buffer.from(response.data),
-                caption: `> *IT'S ERFAN AHMAD*`
-            }, { quoted: mek });
-        }
-
-        // Success reaction
-        await react("✅");
 
     } catch (e) {
-
-        console.log("Instagram Downloader Error:", e);
-
-        await react("❌");
-
-        reply(
-            "❌ An error occurred while downloading Instagram media.\nPlease try again later."
-        );
+        console.error('[IG] Error:', e.message);
+        return await reply(`❌ Error aa gaya: ${e.message || 'Kuch galt ho gaya!'}`);
     }
 });
