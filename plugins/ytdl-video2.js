@@ -37,7 +37,7 @@ const downloadWithRetry = async (url, retries = 3) => {
 
 cmd({
     pattern: "video",
-    alias: ["ytmp4", "ytvideo", "ytdl"],
+    alias: ["ytmp4", "ytvideo", "ytdl1"],
     desc: "YouTube video download karein",
     category: "download",
     react: "📹",
