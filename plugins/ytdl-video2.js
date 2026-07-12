@@ -19,7 +19,6 @@ cmd({
         let url = q;
         let videoInfo = null;
         let videoId = null;
-        let isLongVideo = false;
 
         function getVideoId(link) {
             const match = link.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
@@ -72,7 +71,7 @@ cmd({
             }
         }
 
-        if (Math.floor(durationSeconds / 60) > 15) isLongVideo = true;
+        const durationMinutes = Math.floor(durationSeconds / 60);
 
         function cleanDescription(text) {
             if (!text) return 'N/A';
@@ -95,7 +94,6 @@ cmd({
                         `📝 *Description:* ${cleanDescription(videoInfo.description)}\n` +
                         `📺 *Channel:* ${videoInfo.author?.name || 'Unknown'}\n` +
                         `🕒 *Duration:* ${durationDisplay}\n` +
-                        `${isLongVideo ? '⚠️ *Long video detected (>15 min)*\n' : ''}` +
                         `⏳ *Status:* Fetching download link...\n\n` +
                         `*© Powered by ERFAN-MD*`;
 
@@ -125,70 +123,68 @@ cmd({
         }
 
         // ═══════════════════════════════════════════════════════
-        // 🔥 FIX: Stream video instead of buffering in memory
-        // This handles 2+ hour videos without crashing
+        // 🔥 MAIN FIX: Block long videos before downloading
+        // Only short videos (songs, clips) to prevent crash
         // ═══════════════════════════════════════════════════════
-        try {
-            console.log(`[VIDEO] Starting stream download...`);
+        if (durationMinutes > 15) {
+            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
+            return await reply(
+                `⚠️ *Video too long!* (${durationMinutes} minutes)\n\n` +
+                `Only videos under *15 minutes* are supported.\n` +
+                `Try a song or shorter clip. 🎵`
+            );
+        }
 
-            // Get video as a readable stream (NOT arraybuffer!)
-            const response = await axios.get(downloadUrl, {
-                responseType: 'stream',
-                timeout: isLongVideo ? 600000 : 180000,
+        // Download short video with safe limits
+        try {
+            console.log(`[VIDEO] Downloading: ${durationMinutes} min video...`);
+
+            const videoBuffer = await axios.get(downloadUrl, {
+                responseType: 'arraybuffer',
+                timeout: 120000,              // 2 minutes timeout
+                maxContentLength: 60 * 1024 * 1024,  // 60MB max
+                maxBodyLength: 60 * 1024 * 1024,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': '*/*',
+                    'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
                     'Referer': 'https://www.youtube.com/'
                 }
             });
 
-            // Send stream directly to WhatsApp — zero memory buffer!
+            const sizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
+            console.log(`[VIDEO] Downloaded: ${sizeMB} MB`);
+
+            // Validate: Not an HTML error page
+            const firstBytes = videoBuffer.data.toString('utf-8', 0, 500);
+            if (firstBytes.includes('<!DOCTYPE') || firstBytes.includes('<html>')) {
+                throw new Error('API returned HTML error page');
+            }
+
+            // Validate: At least 50KB (real video)
+            if (videoBuffer.data.length < 50000) {
+                throw new Error('File too small, invalid video');
+            }
+
             await conn.sendMessage(from, {
-                video: { stream: response.data },  // ← STREAM, not Buffer!
-                caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n*© Powered by ERFAN-MD*`
+                video: Buffer.from(videoBuffer.data),
+                caption: `🎬 *${videoInfo.title || 'Video'}*\n\n📥 EliteProTech ✅\n📦 Size: ${sizeMB} MB\n*© Powered by ERFAN-MD*`
             }, { quoted: mek });
 
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-            console.log(`[VIDEO] ✅ Stream sent successfully`);
+            console.log(`[VIDEO] ✅ Sent (${sizeMB} MB)`);
 
-        } catch (streamErr) {
-            console.error('[VIDEO] Stream error:', streamErr.message);
+        } catch (dlErr) {
+            console.error('[VIDEO] Error:', dlErr.message);
 
-            // Fallback: Buffer only for short videos (< 15 min)
-            if (!isLongVideo) {
-                try {
-                    console.log(`[VIDEO] Fallback: Buffering short video...`);
-
-                    const videoBuffer = await axios.get(downloadUrl, {
-                        responseType: 'arraybuffer',
-                        timeout: 120000,
-                        maxContentLength: 100 * 1024 * 1024, // 100MB max
-                        maxBodyLength: 100 * 1024 * 1024,
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            'Referer': 'https://www.youtube.com/'
-                        }
-                    });
-
-                    const bufferString = videoBuffer.data.toString('utf-8', 0, 500);
-                    if (bufferString.includes('<!DOCTYPE') || bufferString.includes('<html>')) {
-                        throw new Error('API returned HTML error page');
-                    }
-
-                    await conn.sendMessage(from, {
-                        video: Buffer.from(videoBuffer.data),
-                        caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n*© Powered by ERFAN-MD*`
-                    }, { quoted: mek });
-
-                    await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-                    return;
-
-                } catch (fallbackErr) {
-                    console.error('[VIDEO] Fallback error:', fallbackErr.message);
-                }
+            if (dlErr.code === 'ECONNABORTED') {
+                await reply("❌ Download timed out! Try again.");
+            } else if (dlErr.response?.status === 404) {
+                await reply("❌ Link expired. Try again.");
+            } else if (dlErr.message.includes('maxContentLength')) {
+                await reply("❌ File too large (over 60MB). Try a shorter video.");
+            } else {
+                await reply(`❌ Download failed: ${dlErr.message}`);
             }
-
-            await reply("❌ Failed to download video. Try again later.");
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
         }
 
