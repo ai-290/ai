@@ -5,6 +5,64 @@ import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
+const AXIOS_DEFAULTS = {
+    timeout: 60000,
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+};
+
+async function tryRequest(getter, attempts = 3) {
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await getter();
+        } catch (err) {
+            lastError = err;
+            if (attempt < attempts) {
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+        }
+    }
+    throw lastError;
+}
+
+// EliteProTech API - Primary
+async function getEliteProTechVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.success && res?.data?.downloadURL) {
+        return {
+            download: res.data.downloadURL,
+            title: res.data.title
+        };
+    }
+    throw new Error('EliteProTech ytdown returned no download');
+}
+
+async function getYupraVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.success && res?.data?.data?.download_url) {
+        return {
+            download: res.data.data.download_url,
+            title: res.data.data.title,
+            thumbnail: res.data.data.thumbnail
+        };
+    }
+    throw new Error('Yupra returned no download');
+}
+
+async function getOkatsuVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.result?.mp4) {
+        return { download: res.data.result.mp4, title: res.data.result.title };
+    }
+    throw new Error('Okatsu ytmp4 returned no mp4');
+}
+
 cmd({
     pattern: "video",
     alias: ["ytv", "ytmp4", "x"],
@@ -14,183 +72,104 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return await reply("❌ Please provide a YouTube video name or URL!\nExample: `.video alone marshmello`");
-
-        let url = q;
-        let videoInfo = null;
-        let videoId = null;
-
-        function getVideoId(link) {
-            const match = link.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-            return match ? match[1] : null;
+        if (!q) {
+            return await reply("What video do you want to download?");
         }
 
+        let videoUrl = '';
+        let videoTitle = '';
+        let videoThumbnail = '';
+
+        // Determine if input is a YouTube link
         if (q.startsWith('http://') || q.startsWith('https://')) {
-            if (!q.includes("youtube.com") && !q.includes("youtu.be")) {
-                return await reply("❌ Please provide a valid YouTube URL!");
-            }
-            videoId = getVideoId(q);
-            if (!videoId) return await reply("❌ Invalid YouTube URL!");
-
-            try {
-                videoInfo = await yts({ videoId });
-            } catch {
-                videoInfo = {
-                    title: q,
-                    thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-                    author: { name: 'YouTube' },
-                    duration: { seconds: 0 }
-                };
-            }
-            url = q;
+            videoUrl = q;
         } else {
-            let searchResults = await yts(q).catch(() => null);
-            if (!searchResults?.videos?.length) {
-                searchResults = await yts(q + " video").catch(() => null);
+            // Search YouTube for the video
+            const { videos } = await yts(q);
+            if (!videos || videos.length === 0) {
+                return await reply("No videos found!");
             }
-            if (!searchResults?.videos?.length) {
-                return await reply("❌ No video found! Try a different search term.");
-            }
-            videoInfo = searchResults.videos[0];
-            url = videoInfo.url;
-            videoId = getVideoId(url);
+            videoUrl = videos[0].url;
+            videoTitle = videos[0].title;
+            videoThumbnail = videos[0].thumbnail;
         }
 
-        // Parse duration properly
-        let durationSeconds = 0;
-        if (videoInfo.duration) {
-            if (typeof videoInfo.duration === 'object' && videoInfo.duration.seconds) {
-                durationSeconds = videoInfo.duration.seconds;
-            } else if (typeof videoInfo.duration === 'number') {
-                durationSeconds = videoInfo.duration;
-            } else if (typeof videoInfo.duration === 'string') {
-                const parts = videoInfo.duration.split(':').map(Number);
-                if (parts.length === 3) durationSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-                else if (parts.length === 2) durationSeconds = parts[0] * 60 + parts[1];
-                else if (parts.length === 1) durationSeconds = parts[0];
-            }
-        }
-
-        const durationMinutes = Math.floor(durationSeconds / 60);
-
-        function cleanDescription(text) {
-            if (!text) return 'N/A';
-            return text.replace(/https?:\/\/[^\s]+/g, '').trim() || 'N/A';
-        }
-
-        function formatDuration(seconds) {
-            if (!seconds) return 'N/A';
-            const hrs = Math.floor(seconds / 3600);
-            const mins = Math.floor((seconds % 3600) / 60);
-            const secs = seconds % 60;
-            if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
-            if (mins > 0) return `${mins}m ${secs}s`;
-            return `${secs}s`;
-        }
-
-        const durationDisplay = formatDuration(durationSeconds);
-        const caption = `*🎬 VIDEO DOWNLOADER*\n\n` +
-                        `📌 *Title:* ${videoInfo.title || 'Unknown'}\n` +
-                        `📝 *Description:* ${cleanDescription(videoInfo.description)}\n` +
-                        `📺 *Channel:* ${videoInfo.author?.name || 'Unknown'}\n` +
-                        `🕒 *Duration:* ${durationDisplay}\n` +
-                        `⏳ *Status:* Fetching download link...\n\n` +
-                        `*© Powered by ERFAN-MD*`;
-
-        await conn.sendMessage(from, {
-            image: { url: videoInfo.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` },
-            caption
-        }, { quoted: mek });
-
-        // EliteProTech API
-        const encodedUrl = encodeURIComponent(url);
-        let downloadUrl = null;
-
+        // Send thumbnail immediately
         try {
-            const res = await axios.get(`https://eliteprotech-apis.zone.id/ytmp4?url=${encodedUrl}`, {
-                timeout: 30000,
-                headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
+            const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
+            const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : undefined);
+            const captionTitle = videoTitle || q;
 
-            if (res.data?.status === true && res.data?.result?.url) {
-                downloadUrl = res.data.result.url;
-            } else {
-                throw new Error('API failed');
+            if (thumb) {
+                await conn.sendMessage(from, {
+                    image: { url: thumb },
+                    caption: `*${captionTitle}*\nDownloading...`
+                }, { quoted: mek });
             }
         } catch (e) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-            return await reply("❌ Failed to fetch download link! Please try again later.");
+            console.error('[VIDEO] thumb error:', e?.message || e);
         }
 
-        // ═══════════════════════════════════════════════════════
-        // 🔥 MAIN FIX: Block long videos before downloading
-        // Only short videos (songs, clips) to prevent crash
-        // ═══════════════════════════════════════════════════════
-        if (durationMinutes > 15) {
-            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
-            return await reply(
-                `⚠️ *Video too long!* (${durationMinutes} minutes)\n\n` +
-                `Only videos under *15 minutes* are supported.\n` +
-                `Try a song or shorter clip. 🎵`
-            );
+        // Validate YouTube URL
+        let urls = videoUrl.match(/(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|playlist\?list=)?)([a-zA-Z0-9_-]{11})/gi);
+        if (!urls) {
+            return await reply("This is not a valid YouTube link!");
         }
 
-        // Download short video with safe limits
-        try {
-            console.log(`[VIDEO] Downloading: ${durationMinutes} min video...`);
+        // Try multiple APIs with fallback chain: EliteProTech -> Yupra -> Okatsu
+        let videoData;
+        let downloadSuccess = false;
 
-            const videoBuffer = await axios.get(downloadUrl, {
-                responseType: 'arraybuffer',
-                timeout: 120000,              // 2 minutes timeout
-                maxContentLength: 60 * 1024 * 1024,  // 60MB max
-                maxBodyLength: 60 * 1024 * 1024,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-                    'Referer': 'https://www.youtube.com/'
+        const apiMethods = [
+            { name: 'EliteProTech', method: () => getEliteProTechVideoByUrl(videoUrl) },
+            { name: 'Yupra', method: () => getYupraVideoByUrl(videoUrl) },
+            { name: 'Okatsu', method: () => getOkatsuVideoByUrl(videoUrl) }
+        ];
+
+        for (const apiMethod of apiMethods) {
+            try {
+                videoData = await apiMethod.method();
+                const videoUrlCheck = videoData.download || videoData.dl || videoData.url;
+
+                if (!videoUrlCheck) {
+                    console.log(`${apiMethod.name} returned no download URL, trying next API...`);
+                    continue;
                 }
-            });
 
-            const sizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
-            console.log(`[VIDEO] Downloaded: ${sizeMB} MB`);
-
-            // Validate: Not an HTML error page
-            const firstBytes = videoBuffer.data.toString('utf-8', 0, 500);
-            if (firstBytes.includes('<!DOCTYPE') || firstBytes.includes('<html>')) {
-                throw new Error('API returned HTML error page');
+                downloadSuccess = true;
+                break;
+            } catch (apiErr) {
+                console.log(`${apiMethod.name} API failed:`, apiErr.message);
+                continue;
             }
-
-            // Validate: At least 50KB (real video)
-            if (videoBuffer.data.length < 50000) {
-                throw new Error('File too small, invalid video');
-            }
-
-            await conn.sendMessage(from, {
-                video: Buffer.from(videoBuffer.data),
-                caption: `🎬 *${videoInfo.title || 'Video'}*\n\n📥 EliteProTech ✅\n📦 Size: ${sizeMB} MB\n*© Powered by ERFAN-MD*`
-            }, { quoted: mek });
-
-            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-            console.log(`[VIDEO] ✅ Sent (${sizeMB} MB)`);
-
-        } catch (dlErr) {
-            console.error('[VIDEO] Error:', dlErr.message);
-
-            if (dlErr.code === 'ECONNABORTED') {
-                await reply("❌ Download timed out! Try again.");
-            } else if (dlErr.response?.status === 404) {
-                await reply("❌ Link expired. Try again.");
-            } else if (dlErr.message.includes('maxContentLength')) {
-                await reply("❌ File too large (over 60MB). Try a shorter video.");
-            } else {
-                await reply(`❌ Download failed: ${dlErr.message}`);
-            }
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
         }
 
-    } catch (e) {
-        console.error("❌ Error in .video command:", e);
-        await reply(`⚠️ Error: ${e.message || 'Something went wrong!'}`);
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        if (!downloadSuccess || !videoData) {
+            throw new Error('All download sources failed. The content may be unavailable or blocked in your region.');
+        }
+
+        // Send video directly using the download URL (streams without memory buffer)
+        await conn.sendMessage(from, {
+            video: { url: videoData.download || videoData.dl || videoData.url },
+            mimetype: 'video/mp4',
+            fileName: `${(videoData.title || videoTitle || 'video').replace(/[^\w\s-]/g, '')}.mp4`,
+            caption: `*${videoData.title || videoTitle || 'Video'}*\n\n> *_Downloaded by Knight Bot MD_*`
+        }, { quoted: mek });
+
+    } catch (error) {
+        console.error('[VIDEO] Command Error:', error?.message || error);
+
+        let errorMessage = '❌ Failed to download video.';
+        if (error.message && error.message.includes('blocked')) {
+            errorMessage = '❌ Download blocked. The content may be unavailable in your region or due to legal restrictions.';
+        } else if (error.response?.status === 451 || error.status === 451) {
+            errorMessage = '❌ Content unavailable (451). This may be due to legal restrictions or regional blocking.';
+        } else if (error.message && error.message.includes('All download sources failed')) {
+            errorMessage = '❌ All download sources failed. The content may be unavailable or blocked.';
+        } else if (error.message) {
+            errorMessage = '❌ Download failed: ' + error.message;
+        }
+
+        await reply(errorMessage);
     }
 });
