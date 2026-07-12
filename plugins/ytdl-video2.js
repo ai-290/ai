@@ -1,96 +1,154 @@
-// ERFAN-MD
 import { fileURLToPath } from 'url';
-import path from 'path';
-import { cmd } from '../command.js';
 import axios from 'axios';
+import yts from 'yt-search';
+import { cmd } from '../command.js';
+
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 cmd({
-    pattern: "instagram",
-    alias: ["ig", "instadl", "insta"],
-    desc: "Download Instagram videos and send them on WhatsApp",
-    category: "downloader",
-    react: "🎥",
+    pattern: "video",
+    alias: ["ytv", "ytmp4", "x"],
+    desc: "Download YouTube video",
+    category: "download",
+    react: "📹",
     filename: __filename
-},
-async (conn, mek, m, { from, q, reply, react }) => {
+}, async (conn, mek, m, { from, q, reply }) => {
     try {
+        if (!q) return await reply("❌ Please provide a YouTube video name or URL!\nExample: `.video alone marshmello`");
 
-        // Check URL
-        if (!q) {
-            return reply(
-                "❌ Please provide an Instagram Reel/Post URL.\n\nExample:\n.instagram https://www.instagram.com/reel/xxxxx/"
-            );
-        }
+        let url = q;
+        let videoInfo = null;
+        let videoId = null;
+        let isLongVideo = false;
 
-        // React loading
-        await react("⬇️");
+        if (q.startsWith('http://') || q.startsWith('https://')) {
+            if (!q.includes("youtube.com") && !q.includes("youtu.be")) {
+                return await reply("❌ Please provide a valid YouTube URL!");
+            }
+            videoId = getVideoId(q);
+            if (!videoId) return await reply("❌ Invalid YouTube URL!");
 
-        // New API URL (Nanzz)
-        const apiUrl = `https://api-nanzz.my.id/docs/api/downloader/Instagram.php?url=${encodeURIComponent(q)}`;
-
-        // Fetch API Data
-        const { data } = await axios.get(apiUrl);
-
-        // Validate response
-        if (!data || !data.debug || !data.debug.status || !data.debug.result || !data.debug.result.download_urls || !data.debug.result.download_urls.length) {
-            await react("❌");
-            return reply("❌ Failed to fetch Instagram media. Try another link.");
-        }
-
-        // Get first media URL
-        const mediaUrl = data.debug.result.download_urls[0];
-
-        // Validate media URL
-        if (!mediaUrl) {
-            await react("❌");
-            return reply("❌ Media URL not found.");
-        }
-
-        // Send info message
-        await reply(
-            `🎬 *INSTAGRAM DOWNLOADER*\n\n` +
-            `📥 Downloading media... Please wait.`
-        );
-
-        // Download media buffer
-        const response = await axios.get(mediaUrl, {
-            responseType: 'arraybuffer'
-        });
-
-        // Detect type from URL (since this API doesn't provide type field)
-        const isVideo = /(\.mp4|\.mov|\.m4v|\.webm)/i.test(mediaUrl) || mediaUrl.includes('mp4');
-
-        // Send video
-        if (isVideo) {
-
-            await conn.sendMessage(from, {
-                video: Buffer.from(response.data),
-                mimetype: 'video/mp4',
-                caption: `> *IT'S ERFAN AHMAD*`
-            }, { quoted: mek });
-
+            try {
+                videoInfo = await yts({ videoId });
+            } catch {
+                videoInfo = {
+                    title: q,
+                    thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+                    author: { name: 'YouTube' },
+                    duration: 0
+                };
+            }
+            url = q;
         } else {
-
-            // Send image if image type
-            await conn.sendMessage(from, {
-                image: Buffer.from(response.data),
-                caption: `> *IT'S ERFAN AHMAD*`
-            }, { quoted: mek });
+            let searchResults = await yts(q).catch(() => null);
+            if (!searchResults?.videos?.length) {
+                searchResults = await yts(q + " video").catch(() => null);
+            }
+            if (!searchResults?.videos?.length) {
+                return await reply("❌ No video found! Try a different search term.");
+            }
+            videoInfo = searchResults.videos[0];
+            url = videoInfo.url;
+            videoId = getVideoId(url);
         }
 
-        // Success reaction
-        await react("✅");
+        function getVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
+
+        const durationSeconds = videoInfo.duration || 0;
+        if (Math.floor(durationSeconds / 60) > 15) isLongVideo = true;
+
+        function cleanDescription(text) {
+            if (!text) return 'N/A';
+            return text.replace(/https?:\/\/[^\s]+/g, '').trim() || 'N/A';
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+            if (mins > 0) return `${mins}m ${secs}s`;
+            return `${secs}s`;
+        }
+
+        const durationDisplay = formatDuration(durationSeconds);
+        const caption = `*🎬 VIDEO DOWNLOADER*\n\n` +
+                        `📌 *Title:* ${videoInfo.title || 'Unknown'}\n` +
+                        `📝 *Description:* ${cleanDescription(videoInfo.description)}\n` +
+                        `📺 *Channel:* ${videoInfo.author?.name || 'Unknown'}\n` +
+                        `🕒 *Duration:* ${durationDisplay}\n` +
+                        `${isLongVideo ? '⚠️ *Long video detected (>15 min)*\n' : ''}` +
+                        `⏳ *Status:* Fetching download link...\n\n` +
+                        `*© Powered by ERFAN-MD*`;
+
+        await conn.sendMessage(from, {
+            image: { url: videoInfo.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` },
+            caption
+        }, { quoted: mek });
+
+        // EliteProTech API
+        const encodedUrl = encodeURIComponent(url);
+        let downloadUrl = null;
+
+        try {
+            const res = await axios.get(`https://eliteprotech-apis.zone.id/ytmp4?url=${encodedUrl}`, {
+                timeout: 30000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+
+            if (res.data?.status === true && res.data?.result?.url) {
+                downloadUrl = res.data.result.url;
+            } else {
+                throw new Error('API failed');
+            }
+        } catch (e) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return await reply("❌ Failed to fetch download link! Please try again later.");
+        }
+
+        // Download and send video
+        try {
+            const downloadTimeout = isLongVideo ? 600000 : 180000;
+            
+            const videoBuffer = await axios.get(downloadUrl, {
+                responseType: 'arraybuffer',
+                timeout: downloadTimeout,
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+
+            const fileSizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
+
+            const bufferString = videoBuffer.data.toString('utf-8', 0, 500);
+            if (bufferString.includes('<!DOCTYPE') || bufferString.includes('<html>')) {
+                return await reply("❌ Invalid response received. Try again.");
+            }
+
+            await conn.sendMessage(from, {
+                video: Buffer.from(videoBuffer.data),
+                caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n📦 Size: ${fileSizeMB} MB\n*© Powered by ERFAN-MD*`
+            }, { quoted: mek });
+
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+
+        } catch (dlErr) {
+            console.error('[VIDEO] Download error:', dlErr.message);
+            if (dlErr.code === 'ECONNABORTED') {
+                await reply("❌ Download timed out! Video might be too long.");
+            } else {
+                await reply("❌ Failed to download video. Try again later.");
+            }
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        }
 
     } catch (e) {
-
-        console.log("Instagram Downloader Error:", e);
-
-        await react("❌");
-
-        reply(
-            "❌ An error occurred while downloading Instagram media.\nPlease try again later."
-        );
+        console.error("❌ Error in .video command:", e);
+        await reply(`⚠️ Error: ${e.message || 'Something went wrong!'}`);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
