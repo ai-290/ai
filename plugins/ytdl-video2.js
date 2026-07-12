@@ -21,7 +21,6 @@ cmd({
         let videoId = null;
         let isLongVideo = false;
 
-        // Extract video ID helper
         function getVideoId(link) {
             const match = link.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
             return match ? match[1] : null;
@@ -58,7 +57,7 @@ cmd({
             videoId = getVideoId(url);
         }
 
-        // FIX: Properly parse duration from yt-search (it returns object or string, not always seconds)
+        // Parse duration properly
         let durationSeconds = 0;
         if (videoInfo.duration) {
             if (typeof videoInfo.duration === 'object' && videoInfo.duration.seconds) {
@@ -125,32 +124,56 @@ cmd({
             return await reply("❌ Failed to fetch download link! Please try again later.");
         }
 
-        // FIX: Send video directly via URL — no memory buffering!
-        // This prevents crashes on large videos (2+ hours / 300MB+)
+        // ═══════════════════════════════════════════════════════
+        // 🔥 FIX: Stream video instead of buffering in memory
+        // This handles 2+ hour videos without crashing
+        // ═══════════════════════════════════════════════════════
         try {
+            console.log(`[VIDEO] Starting stream download...`);
+
+            // Get video as a readable stream (NOT arraybuffer!)
+            const response = await axios.get(downloadUrl, {
+                responseType: 'stream',
+                timeout: isLongVideo ? 600000 : 180000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': '*/*',
+                    'Referer': 'https://www.youtube.com/'
+                }
+            });
+
+            // Send stream directly to WhatsApp — zero memory buffer!
             await conn.sendMessage(from, {
-                video: { url: downloadUrl },  // Direct streaming — Baileys handles it
+                video: { stream: response.data },  // ← STREAM, not Buffer!
                 caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n*© Powered by ERFAN-MD*`
             }, { quoted: mek });
 
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+            console.log(`[VIDEO] ✅ Stream sent successfully`);
 
-        } catch (dlErr) {
-            console.error('[VIDEO] Send error:', dlErr.message);
-            
-            // Fallback: Only buffer small videos (< 15 min / ~50MB)
+        } catch (streamErr) {
+            console.error('[VIDEO] Stream error:', streamErr.message);
+
+            // Fallback: Buffer only for short videos (< 15 min)
             if (!isLongVideo) {
                 try {
+                    console.log(`[VIDEO] Fallback: Buffering short video...`);
+
                     const videoBuffer = await axios.get(downloadUrl, {
                         responseType: 'arraybuffer',
                         timeout: 120000,
-                        maxContentLength: 100 * 1024 * 1024, // 100MB limit
+                        maxContentLength: 100 * 1024 * 1024, // 100MB max
                         maxBodyLength: 100 * 1024 * 1024,
-                        headers: { 
+                        headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             'Referer': 'https://www.youtube.com/'
                         }
                     });
+
+                    const bufferString = videoBuffer.data.toString('utf-8', 0, 500);
+                    if (bufferString.includes('<!DOCTYPE') || bufferString.includes('<html>')) {
+                        throw new Error('API returned HTML error page');
+                    }
 
                     await conn.sendMessage(from, {
                         video: Buffer.from(videoBuffer.data),
@@ -159,12 +182,13 @@ cmd({
 
                     await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
                     return;
+
                 } catch (fallbackErr) {
                     console.error('[VIDEO] Fallback error:', fallbackErr.message);
                 }
             }
-            
-            await reply("❌ Failed to send video. The link may have expired or the video is too large for WhatsApp.");
+
+            await reply("❌ Failed to download video. Try again later.");
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
         }
 
