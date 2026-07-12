@@ -1,9 +1,8 @@
-// ERFAN-MD — Instagram Downloader (Fixed)
+// ERFAN-MD
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { cmd } from '../command.js';
 import axios from 'axios';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -17,95 +16,81 @@ cmd({
 },
 async (conn, mek, m, { from, q, reply, react }) => {
     try {
-        // 1) Check URL
-        if (!q || !q.includes("instagram.com")) {
+
+        // Check URL
+        if (!q) {
             return reply(
-                "❌ Please provide a valid Instagram Reel/Post URL.\n\nExample:\n.instagram https://www.instagram.com/reel/xxxxx/"
+                "❌ Please provide an Instagram Reel/Post URL.\n\nExample:\n.instagram https://www.instagram.com/reel/xxxxx/"
             );
         }
 
-        // 2) Loading reaction
+        // React loading
         await react("⬇️");
 
-        // 3) API Call (lolhuman — requires free API Key)
-        // ⚠️ IMPORTANT: Replace "YOUR_APIKEY" with your real API Key from lolhuman.xyz
-        const apiKey = "YOUR_APIKEY"; // <-- Get free API key from lolhuman.xyz
-        const apiUrl = `https://api.lolhuman.xyz/api/instagram?apikey=${apiKey}&url=${encodeURIComponent(q)}`;
+        // New API URL (Nanzz)
+        const apiUrl = `https://api-nanzz.my.id/docs/api/downloader/Instagram.php?url=${encodeURIComponent(q)}`;
 
-        // Request with timeout
-        const { data } = await axios.get(apiUrl, { timeout: 30000 });
+        // Fetch API Data
+        const { data } = await axios.get(apiUrl);
 
-        // 4) Check response (flexible handling)
-        if (!data || data.status !== 200) {
+        // Validate response
+        if (!data || !data.debug || !data.debug.status || !data.debug.result || !data.debug.result.download_urls || !data.debug.result.download_urls.length) {
             await react("❌");
-            return reply("❌ Failed to fetch Instagram media. Please check if the link is valid.");
+            return reply("❌ Failed to fetch Instagram media. Try another link.");
         }
 
-        // 5) Extract media URL (supports different formats)
-        let mediaUrl = null;
-        let mediaType = "video";
+        // Get first media URL
+        const mediaUrl = data.debug.result.download_urls[0];
 
-        if (typeof data.result === "string") {
-            // Direct URL string
-            mediaUrl = data.result;
-        } else if (Array.isArray(data.result) && data.result.length > 0) {
-            // Array response
-            mediaUrl = data.result[0].url || data.result[0];
-            mediaType = data.result[0].type || "video";
-        } else if (data.result && typeof data.result === "object") {
-            // Object response
-            mediaUrl = data.result.url || data.result.link || data.result.download;
-            mediaType = data.result.type || "video";
-        }
-
+        // Validate media URL
         if (!mediaUrl) {
             await react("❌");
-            return reply("❌ Media URL not found in API response.");
+            return reply("❌ Media URL not found.");
         }
 
-        // 6) Send info message
+        // Send info message
         await reply(
             `🎬 *INSTAGRAM DOWNLOADER*\n\n` +
-            `📦 *Type:* ${mediaType.toUpperCase()}\n` +
-            `⚡ *Status:* Downloading...\n\n` +
-            `📥 Downloading media, please wait...`
+            `📥 Downloading media... Please wait.`
         );
 
-        // 7) Download media buffer
+        // Download media buffer
         const response = await axios.get(mediaUrl, {
-            responseType: 'arraybuffer',
-            timeout: 60000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            responseType: 'arraybuffer'
         });
 
-        const buffer = Buffer.from(response.data);
+        // Detect type from URL (since this API doesn't provide type field)
+        const isVideo = /(\.mp4|\.mov|\.m4v|\.webm)/i.test(mediaUrl) || mediaUrl.includes('mp4');
 
-        // 8) Send media
-        if (mediaType.toLowerCase() === "video" || mediaType.toLowerCase() === "mp4") {
+        // Send video
+        if (isVideo) {
+
             await conn.sendMessage(from, {
-                video: buffer,
+                video: Buffer.from(response.data),
                 mimetype: 'video/mp4',
                 caption: `> *IT'S ERFAN AHMAD*`
             }, { quoted: mek });
+
         } else {
+
+            // Send image if image type
             await conn.sendMessage(from, {
-                image: buffer,
+                image: Buffer.from(response.data),
                 caption: `> *IT'S ERFAN AHMAD*`
             }, { quoted: mek });
         }
 
-        // 9) Success reaction
+        // Success reaction
         await react("✅");
 
     } catch (e) {
-        console.error("Instagram Downloader Error:", e.message);
+
+        console.log("Instagram Downloader Error:", e);
+
         await react("❌");
-        return reply(
-            "❌ An error occurred:\n" +
-            `\`\`\`${e.message}\`\`\`\n\n` +
-            "Please try again or check your API Key."
+
+        reply(
+            "❌ An error occurred while downloading Instagram media.\nPlease try again later."
         );
     }
 });
