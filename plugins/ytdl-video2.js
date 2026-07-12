@@ -5,10 +5,13 @@ import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
+// ──────────────────────────────────────────────────────────────
+// 🎬 VIDEO COMMAND (Fixed with New Working APIs)
+// ──────────────────────────────────────────────────────────────
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "x"],
-    desc: "Download YouTube video",
+    alias: ["ytv", "ytmp4", "vz"],
+    desc: "Download YouTube video (MP4) with new working APIs",
     category: "download",
     react: "📹",
     filename: __filename
@@ -20,59 +23,62 @@ cmd({
         let videoInfo = null;
         let videoId = null;
 
-        function getVideoId(link) {
-            const match = link.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+        // Helper: Extract YouTube Video ID
+        function getVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
             return match ? match[1] : null;
         }
 
+        // ── Search or extract URL ──
         if (q.startsWith('http://') || q.startsWith('https://')) {
             if (!q.includes("youtube.com") && !q.includes("youtu.be")) {
                 return await reply("❌ Please provide a valid YouTube URL!");
             }
             videoId = getVideoId(q);
             if (!videoId) return await reply("❌ Invalid YouTube URL!");
-
+            
             try {
-                videoInfo = await yts({ videoId });
-            } catch {
-                videoInfo = {
+                const searchFromUrl = await yts({ videoId });
+                videoInfo = searchFromUrl;
+            } catch (searchErr) {
+                console.log('[VIDEO] yts failed, using URL directly:', searchErr.message);
+                videoInfo = { 
                     title: q,
                     thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
                     author: { name: 'YouTube' },
-                    duration: { seconds: 0 }
+                    timestamp: 'N/A',
+                    description: 'N/A',
+                    duration: 0
                 };
             }
             url = q;
         } else {
-            let searchResults = await yts(q).catch(() => null);
-            if (!searchResults?.videos?.length) {
-                searchResults = await yts(q + " video").catch(() => null);
+            let searchResults = null;
+            
+            try {
+                searchResults = await yts(q);
+            } catch (e) {
+                console.log('[VIDEO] Search failed:', e.message);
             }
-            if (!searchResults?.videos?.length) {
+            
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
+                try {
+                    searchResults = await yts(q + " video");
+                } catch (e) {
+                    console.log('[VIDEO] Second search failed:', e.message);
+                }
+            }
+            
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
                 return await reply("❌ No video found! Try a different search term.");
             }
+            
             videoInfo = searchResults.videos[0];
             url = videoInfo.url;
             videoId = getVideoId(url);
         }
 
-        // Parse duration properly
-        let durationSeconds = 0;
-        if (videoInfo.duration) {
-            if (typeof videoInfo.duration === 'object' && videoInfo.duration.seconds) {
-                durationSeconds = videoInfo.duration.seconds;
-            } else if (typeof videoInfo.duration === 'number') {
-                durationSeconds = videoInfo.duration;
-            } else if (typeof videoInfo.duration === 'string') {
-                const parts = videoInfo.duration.split(':').map(Number);
-                if (parts.length === 3) durationSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-                else if (parts.length === 2) durationSeconds = parts[0] * 60 + parts[1];
-                else if (parts.length === 1) durationSeconds = parts[0];
-            }
-        }
-
-        const durationMinutes = Math.floor(durationSeconds / 60);
-
+        // ── Format helpers ──
         function cleanDescription(text) {
             if (!text) return 'N/A';
             return text.replace(/https?:\/\/[^\s]+/g, '').trim() || 'N/A';
@@ -88,7 +94,10 @@ cmd({
             return `${secs}s`;
         }
 
+        const durationSeconds = videoInfo.duration || 0;
         const durationDisplay = formatDuration(durationSeconds);
+
+        // ── Send initial info ──
         const caption = `*🎬 VIDEO DOWNLOADER*\n\n` +
                         `📌 *Title:* ${videoInfo.title || 'Unknown'}\n` +
                         `📝 *Description:* ${cleanDescription(videoInfo.description)}\n` +
@@ -102,90 +111,104 @@ cmd({
             caption
         }, { quoted: mek });
 
-        // EliteProTech API
+        // ── NEW API Priority List (Old broken APIs removed) ──
         const encodedUrl = encodeURIComponent(url);
         let downloadUrl = null;
+        let usedApi = '';
 
-        try {
-            const res = await axios.get(`https://eliteprotech-apis.zone.id/ytmp4?url=${encodedUrl}`, {
-                timeout: 30000,
-                headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
-
-            if (res.data?.status === true && res.data?.result?.url) {
-                downloadUrl = res.data.result.url;
-            } else {
-                throw new Error('API failed');
-            }
-        } catch (e) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-            return await reply("❌ Failed to fetch download link! Please try again later.");
-        }
-
-        // ═══════════════════════════════════════════════════════
-        // 🔥 MAIN FIX: Block long videos before downloading
-        // Only short videos (songs, clips) to prevent crash
-        // ═══════════════════════════════════════════════════════
-        if (durationMinutes > 15) {
-            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
-            return await reply(
-                `⚠️ *Video too long!* (${durationMinutes} minutes)\n\n` +
-                `Only videos under *15 minutes* are supported.\n` +
-                `Try a song or shorter clip. 🎵`
-            );
-        }
-
-        // Download short video with safe limits
-        try {
-            console.log(`[VIDEO] Downloading: ${durationMinutes} min video...`);
-
-            const videoBuffer = await axios.get(downloadUrl, {
-                responseType: 'arraybuffer',
-                timeout: 120000,              // 2 minutes timeout
-                maxContentLength: 60 * 1024 * 1024,  // 60MB max
-                maxBodyLength: 60 * 1024 * 1024,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-                    'Referer': 'https://www.youtube.com/'
+        const apis = [
+            { 
+                name: 'EliteProTech', 
+                fn: async () => {
+                    const res = await axios.get(`https://eliteprotech-apis.zone.id/ytmp4?url=${encodedUrl}`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.status === true && res.data?.result?.url) {
+                        return res.data.result.url;
+                    }
+                    throw new Error('EliteProTech failed');
                 }
-            });
-
-            const sizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
-            console.log(`[VIDEO] Downloaded: ${sizeMB} MB`);
-
-            // Validate: Not an HTML error page
-            const firstBytes = videoBuffer.data.toString('utf-8', 0, 500);
-            if (firstBytes.includes('<!DOCTYPE') || firstBytes.includes('<html>')) {
-                throw new Error('API returned HTML error page');
+            },
+            { 
+                name: 'GiftedTech', 
+                fn: async () => {
+                    const res = await axios.get(`https://api.giftedtech.co.ke/api/download/ytmp4?apikey=gifted&url=${encodedUrl}&quality=720p`, { 
+                        timeout: 30000,
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    });
+                    if (res.data?.success === true && res.data?.result?.download_url) {
+                        return res.data.result.download_url;
+                    }
+                    throw new Error('GiftedTech failed');
+                }
             }
+        ];
 
-            // Validate: At least 50KB (real video)
-            if (videoBuffer.data.length < 50000) {
-                throw new Error('File too small, invalid video');
+        // ── Try each API ──
+        for (const api of apis) {
+            try {
+                console.log(`[VIDEO] Trying ${api.name}...`);
+                const link = await api.fn();
+                
+                if (link) {
+                    downloadUrl = link;
+                    usedApi = api.name;
+                    console.log(`[VIDEO] ✅ ${api.name} returned a link`);
+                    break;
+                }
+            } catch (e) {
+                console.log(`[VIDEO] ❌ ${api.name} failed:`, e.message);
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
+        }
 
+        if (!downloadUrl) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return await reply("❌ All APIs failed! Please try again later.\n\n💡 Try using a direct YouTube URL.");
+        }
+
+        // ── Send video directly via URL (No buffer download = No timeout!) ──
+        try {
+            console.log(`[VIDEO] Sending video via ${usedApi}...`);
+            
             await conn.sendMessage(from, {
-                video: Buffer.from(videoBuffer.data),
-                caption: `🎬 *${videoInfo.title || 'Video'}*\n\n📥 EliteProTech ✅\n📦 Size: ${sizeMB} MB\n*© Powered by ERFAN-MD*`
+                video: { url: downloadUrl },
+                caption: `🎬 *${videoInfo.title || 'Video'}*\n\n📥 Downloaded via: ${usedApi} ✅\n*© Powered by ERFAN-MD*`
             }, { quoted: mek });
 
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-            console.log(`[VIDEO] ✅ Sent (${sizeMB} MB)`);
+            console.log(`[VIDEO] ✅ Successfully sent video via ${usedApi}`);
 
-        } catch (dlErr) {
-            console.error('[VIDEO] Error:', dlErr.message);
+        } catch (sendErr) {
+            console.error('[VIDEO] Direct URL send failed:', sendErr.message);
+            
+            // Fallback: Try downloading as buffer if direct URL fails
+            try {
+                console.log(`[VIDEO] Fallback: Downloading as buffer...`);
+                const videoBuffer = await axios.get(downloadUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 300000, // 5 minutes
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                });
 
-            if (dlErr.code === 'ECONNABORTED') {
-                await reply("❌ Download timed out! Try again.");
-            } else if (dlErr.response?.status === 404) {
-                await reply("❌ Link expired. Try again.");
-            } else if (dlErr.message.includes('maxContentLength')) {
-                await reply("❌ File too large (over 60MB). Try a shorter video.");
-            } else {
-                await reply(`❌ Download failed: ${dlErr.message}`);
+                const fileSizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
+                
+                await conn.sendMessage(from, {
+                    video: Buffer.from(videoBuffer.data),
+                    caption: `🎬 *${videoInfo.title || 'Video'}*\n\n📥 Downloaded via: ${usedApi} ✅\n📦 Size: ${fileSizeMB} MB\n*© Powered by ERFAN-MD*`
+                }, { quoted: mek });
+
+                await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+                console.log(`[VIDEO] ✅ Successfully sent video (${fileSizeMB} MB)`);
+                
+            } catch (dlErr) {
+                console.error('[VIDEO] Buffer download also failed:', dlErr.message);
+                await reply(`❌ Failed to send video from ${usedApi}. The link may have expired. Try again.`);
+                await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
             }
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
         }
 
     } catch (e) {
