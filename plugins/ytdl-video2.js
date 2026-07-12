@@ -12,11 +12,11 @@ function getVideoId(url) {
 }
 
 // ============================================
-// COMMAND: video (Only EliteProTech API)
+// COMMAND: video (EliteProTech /ytmp4 API)
 // ============================================
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "cc"],
+    alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video",
     category: "download",
     react: "📹",
@@ -58,15 +58,17 @@ cmd({
             caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n👁️ *Views:* ${vid.views?.toLocaleString() || 'N/A'}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
         }, { quoted: mek });
 
-        // Use EliteProTech API
-        const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(url)}&format=mp4`;
+        // Use EliteProTech /ytmp4 API
+        const apiUrl = `https://eliteprotech-apis.zone.id/ytmp4?url=${encodeURIComponent(url)}`;
         const response = await axios.get(apiUrl);
         
-        if (response.data.success && response.data.downloadURL) {
+        if (response.data.status && response.data.result && response.data.result.url) {
+            const videoData = response.data.result;
+            
             // Send the video
             await conn.sendMessage(from, {
-                video: { url: response.data.downloadURL },
-                caption: `🎬 *${vid.title}*\n\n> ${DESCRIPTION}`
+                video: { url: videoData.url },
+                caption: `🎬 *${videoData.title || vid.title}*\n📦 *Size:* ${(videoData.size / 1024 / 1024).toFixed(2)} MB\n\n> ${DESCRIPTION}`
             }, { quoted: mek });
             
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
