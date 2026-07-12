@@ -6,90 +6,184 @@ import { cmd } from '../command.js';
 const __filename = fileURLToPath(import.meta.url);
 
 // ──────────────────────────────────────────────────────────────
-// 🎬 VIDEO COMMAND — GTech API
+// 🎬 VIDEO COMMAND — Sirf Delirius API
 // ──────────────────────────────────────────────────────────────
-
-const DL_API = 'https://gtech-api-xtp1.onrender.com/api/video/yt';
-const API_KEY = 'xbps-install-Syu'; // ⚠️ Apni asli API key yahan daalein
-
-const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
-const downloadWithRetry = async (url, retries = 3) => {
-    for (let i = 0; i < retries; i++) {
-        try {
-            const { data } = await axios.get(DL_API, {
-                params: { apikey: API_KEY, url },
-                timeout: 120000
-            });
-            if (data?.status && data?.code === 200 && data?.result?.media?.video_url)
-                return data.result.media;
-            throw new Error('No download URL');
-        }
-        catch (err) {
-            if (i === retries - 1)
-                throw err;
-            console.log(`Download attempt ${i + 1} failed, retrying in 5s...`);
-            await wait(5000);
-        }
-    }
-    throw new Error('All download attempts failed');
-};
 
 cmd({
     pattern: "video",
-    alias: ["ytmp4", "ytvideo", "ytdl1"],
+    alias: ["ytv", "ytmp4", "vz"],
     desc: "YouTube video download karein",
     category: "download",
     react: "📹",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply }) => {
-    if (!q)
-        return await reply('🎥 *Konsa video download karna hai?*\nExample:\n.video Alan Walker Faded');
-
     try {
-        let videoUrl;
-        let videoTitle;
-        let videoThumbnail;
+        if (!q) return await reply("❌ Bhai kuch likho toh sahi!\nExample: `.video alone marshmello`");
 
+        let url = q;
+        let videoInfo = null;
+        let videoId = null;
+
+        // ── URL hai ya search query? ──
         if (q.startsWith('http://') || q.startsWith('https://')) {
-            videoUrl = q;
-        }
-        else {
-            const { videos } = await yts(q);
-            if (!videos?.length)
-                return await reply('❌ Koi video nahi mili!');
-            videoUrl = videos[0].url;
-            videoTitle = videos[0].title;
-            videoThumbnail = videos[0].thumbnail;
+            if (!q.includes("youtube.com") && !q.includes("youtu.be")) {
+                return await reply("❌ Bhai valid YouTube URL do!");
+            }
+            videoId = getVideoId(q);
+            if (!videoId) return await reply("❌ URL sahi nahi hai!");
+            
+            try {
+                const searchFromUrl = await yts({ videoId });
+                videoInfo = searchFromUrl;
+            } catch (searchErr) {
+                videoInfo = { 
+                    title: q,
+                    thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+                    author: { name: 'YouTube' },
+                    timestamp: 'N/A',
+                    description: 'N/A',
+                    duration: 0
+                };
+            }
+            url = q;
+        } else {
+            let searchResults = null;
+            
+            try {
+                searchResults = await yts(q);
+            } catch (e) {
+                console.log('[VIDEO] Search failed:', e.message);
+            }
+            
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
+                try {
+                    searchResults = await yts(q + " video");
+                } catch (e) {
+                    console.log('[VIDEO] Second search failed:', e.message);
+                }
+            }
+            
+            if (!searchResults || !searchResults.videos || searchResults.videos.length === 0) {
+                return await reply("❌ Koi video nahi mili! Koi aur naam try karo.");
+            }
+            
+            videoInfo = searchResults.videos[0];
+            url = videoInfo.url;
+            videoId = getVideoId(url);
         }
 
-        const validYT = videoUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([a-zA-Z0-9_-]{11})/);
-        if (!validYT)
-            return await reply('❌ Ye valid YouTube link nahi hai!');
+        function getVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
 
-        const ytId = validYT[1];
-        const thumb = videoThumbnail || `https://i.ytimg.com/vi/${ytId}/sddefault.jpg`;
+        // ── Format duration ──
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+            if (mins > 0) return `${mins}m ${secs}s`;
+            return `${secs}s`;
+        }
+
+        const durationSeconds = videoInfo.duration || 0;
+        const durationDisplay = formatDuration(durationSeconds);
+
+        // ── Pehle thumbnail aur info bhejo ──
+        const caption = `*🎬 VIDEO DOWNLOADER*\n\n` +
+                        `📌 *Title:* ${videoInfo.title || 'Unknown'}\n` +
+                        `📺 *Channel:* ${videoInfo.author?.name || 'Unknown'}\n` +
+                        `🕒 *Duration:* ${durationDisplay}\n` +
+                        `⏳ *Status:* Download link le raha hoon...\n\n` +
+                        `*© Powered by ERFAN-MD*`;
 
         await conn.sendMessage(from, {
-            image: { url: thumb },
-            caption: `🎬 *${videoTitle || q}*\n⬇️ Download ho rahi hai... *(thora wait karo)*`
+            image: { url: videoInfo.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` },
+            caption
         }, { quoted: mek });
 
-        const videoData = await downloadWithRetry(videoUrl);
+        // ── Sirf Delirius API ──
+        const encodedUrl = encodeURIComponent(url);
+        let downloadUrl = null;
 
-        await conn.sendMessage(from, {
-            video: { url: videoData.video_url },
-            mimetype: 'video/mp4',
-            fileName: `${videoData.title || videoTitle || 'video'}.mp4`,
-            caption: `🎬 *${videoData.title || videoTitle || 'Video'}*\n\n> *_Downloaded by ERFAN-MD_*`
-        }, { quoted: mek });
+        try {
+            console.log(`[VIDEO] Delirius API call...`);
+            const res = await axios.get(`https://api.delirius.store/download/ytmp4?url=${encodedUrl}&format=360p`, { 
+                timeout: 30000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            
+            if (res.data?.status && res.data?.data?.download) {
+                downloadUrl = res.data.data.download;
+                console.log(`[VIDEO] ✅ Delirius se link mil gaya`);
+            } else {
+                throw new Error('Delirius se link nahi mila');
+            }
+        } catch (e) {
+            console.log(`[VIDEO] ❌ Delirius failed:`, e.message);
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return await reply("❌ Delirius API fail ho gayi! Thori der baad try karo.");
+        }
 
-    }
-    catch (err) {
-        console.error('[VIDEO] Error:', err.message);
-        const reason = err.response?.status === 408
-            ? 'Download time khatam ho gaya. Dobara try karo.'
-            : err.message;
-        await reply(`❌ Download fail ho gaya!\nReason: ${reason}`);
+        if (!downloadUrl) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return await reply("❌ Download link nahi mila! Dobara try karo.");
+        }
+
+        // ── Video download karo ──
+        try {
+            console.log(`[VIDEO] Delirius se download ho rahi hai...`);
+            
+            const videoBuffer = await axios.get(downloadUrl, {
+                responseType: 'arraybuffer',
+                timeout: 180000,
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': '*/*',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive'
+                }
+            });
+
+            const fileSizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
+            console.log(`[VIDEO] Downloaded ${fileSizeMB} MB`);
+
+            // Check karo ke video hai ya error page
+            const bufferString = videoBuffer.data.toString('utf-8', 0, 500);
+            if (bufferString.includes('<!DOCTYPE') || bufferString.includes('<html>')) {
+                console.log(`[VIDEO] ⚠️ Delirius ne HTML bheja video ki jagah`);
+                return await reply("❌ API ne error page bheja! Dobara try karo.");
+            }
+
+            // ── Video bhejo ──
+            await conn.sendMessage(from, {
+                video: Buffer.from(videoBuffer.data),
+                caption: `🎬 *${videoInfo.title || 'Video'}*\n\n📦 Size: ${fileSizeMB} MB\n*© Powered by ERFAN-MD*`
+            }, { quoted: mek });
+
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+            console.log(`[VIDEO] ✅ Video bhej di gayi (${fileSizeMB} MB)`);
+
+        } catch (dlErr) {
+            console.error('[VIDEO] Download error:', dlErr.message);
+            
+            if (dlErr.code === 'ECONNABORTED') {
+                await reply(`❌ Download time khatam ho gaya! Video bohat lambi hai.`);
+            } else if (dlErr.response?.status === 404) {
+                await reply(`❌ Download link expire ho gaya. Dobara try karo.`);
+            } else {
+                await reply(`❌ Video download nahi ho saki. Dobara try karo.`);
+            }
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        }
+
+    } catch (e) {
+        console.error("❌ Error in .video command:", e);
+        await reply(`⚠️ Error aa gaya: ${e.message || 'Kuch galt ho gaya!'}`);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
