@@ -21,6 +21,12 @@ cmd({
         let videoId = null;
         let isLongVideo = false;
 
+        // Extract video ID helper
+        function getVideoId(link) {
+            const match = link.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
+
         if (q.startsWith('http://') || q.startsWith('https://')) {
             if (!q.includes("youtube.com") && !q.includes("youtu.be")) {
                 return await reply("❌ Please provide a valid YouTube URL!");
@@ -35,7 +41,7 @@ cmd({
                     title: q,
                     thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
                     author: { name: 'YouTube' },
-                    duration: 0
+                    duration: { seconds: 0 }
                 };
             }
             url = q;
@@ -52,12 +58,21 @@ cmd({
             videoId = getVideoId(url);
         }
 
-        function getVideoId(url) {
-            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-            return match ? match[1] : null;
+        // FIX: Properly parse duration from yt-search (it returns object or string, not always seconds)
+        let durationSeconds = 0;
+        if (videoInfo.duration) {
+            if (typeof videoInfo.duration === 'object' && videoInfo.duration.seconds) {
+                durationSeconds = videoInfo.duration.seconds;
+            } else if (typeof videoInfo.duration === 'number') {
+                durationSeconds = videoInfo.duration;
+            } else if (typeof videoInfo.duration === 'string') {
+                const parts = videoInfo.duration.split(':').map(Number);
+                if (parts.length === 3) durationSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                else if (parts.length === 2) durationSeconds = parts[0] * 60 + parts[1];
+                else if (parts.length === 1) durationSeconds = parts[0];
+            }
         }
 
-        const durationSeconds = videoInfo.duration || 0;
         if (Math.floor(durationSeconds / 60) > 15) isLongVideo = true;
 
         function cleanDescription(text) {
@@ -110,39 +125,46 @@ cmd({
             return await reply("❌ Failed to fetch download link! Please try again later.");
         }
 
-        // Download and send video
+        // FIX: Send video directly via URL — no memory buffering!
+        // This prevents crashes on large videos (2+ hours / 300MB+)
         try {
-            const downloadTimeout = isLongVideo ? 600000 : 180000;
-            
-            const videoBuffer = await axios.get(downloadUrl, {
-                responseType: 'arraybuffer',
-                timeout: downloadTimeout,
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-                headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
-
-            const fileSizeMB = (videoBuffer.data.length / (1024 * 1024)).toFixed(2);
-
-            const bufferString = videoBuffer.data.toString('utf-8', 0, 500);
-            if (bufferString.includes('<!DOCTYPE') || bufferString.includes('<html>')) {
-                return await reply("❌ Invalid response received. Try again.");
-            }
-
             await conn.sendMessage(from, {
-                video: Buffer.from(videoBuffer.data),
-                caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n📦 Size: ${fileSizeMB} MB\n*© Powered by ERFAN-MD*`
+                video: { url: downloadUrl },  // Direct streaming — Baileys handles it
+                caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n*© Powered by ERFAN-MD*`
             }, { quoted: mek });
 
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
         } catch (dlErr) {
-            console.error('[VIDEO] Download error:', dlErr.message);
-            if (dlErr.code === 'ECONNABORTED') {
-                await reply("❌ Download timed out! Video might be too long.");
-            } else {
-                await reply("❌ Failed to download video. Try again later.");
+            console.error('[VIDEO] Send error:', dlErr.message);
+            
+            // Fallback: Only buffer small videos (< 15 min / ~50MB)
+            if (!isLongVideo) {
+                try {
+                    const videoBuffer = await axios.get(downloadUrl, {
+                        responseType: 'arraybuffer',
+                        timeout: 120000,
+                        maxContentLength: 100 * 1024 * 1024, // 100MB limit
+                        maxBodyLength: 100 * 1024 * 1024,
+                        headers: { 
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Referer': 'https://www.youtube.com/'
+                        }
+                    });
+
+                    await conn.sendMessage(from, {
+                        video: Buffer.from(videoBuffer.data),
+                        caption: `🎬 *${videoInfo.title}*\n\n📥 Downloaded via: EliteProTech ✅\n*© Powered by ERFAN-MD*`
+                    }, { quoted: mek });
+
+                    await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+                    return;
+                } catch (fallbackErr) {
+                    console.error('[VIDEO] Fallback error:', fallbackErr.message);
+                }
             }
+            
+            await reply("❌ Failed to send video. The link may have expired or the video is too large for WhatsApp.");
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
         }
 
