@@ -3040,7 +3040,7 @@ cmd({
 // ============================================
 cmd({
   pattern: "shadiprediction",
-  alias: ["shadi", "marriagepred"],
+  alias: ["shadi1", "marriagepred"],
   desc: "Funny marriage prediction",
   react: "💍",
   category: "💬 Fun Text",
