@@ -5,81 +5,56 @@ import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 
-// Helper to extract YouTube video ID
-function getVideoId(url) {
-    const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-    return match ? match[1] : null;
-}
-
 // ============================================
-// COMMAND: video (Nanzz /ytmp4 API — Auto 360p)
+// COMMAND: ytvideo (NeoDev ytplay API)
 // ============================================
 cmd({
-    pattern: "video2",
-    alias: ["ytv", "ytmp4", "bz"],
-    desc: "Download YouTube video",
+    pattern: "ytvideo2",
+    alias: ["ytvid", "ytdl", "downloadvideo"],
+    desc: "Download YouTube video with search",
     category: "download",
-    react: "📹",
+    react: "🎥",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply, userConfig }) => {
     try {
-        if (!text) return reply("🎥 Please provide a video name or link!\n\nExample: `.video pal pal`");
+        if (!text) return reply("🎥 Please provide a video name or search query!\n\nExample: `.ytvideo Pal pal`");
 
         const DESCRIPTION = userConfig?.DESCRIPTION || config.DESCRIPTION || "";
 
-        const { default: yts } = await import('yt-search');
-        
-        let url = text;
-        let vid = null;
+        // Show searching message
+        await conn.sendMessage(from, { react: { text: '🔍', key: m.key } });
 
-        // Check if it's a URL
-        if (text.startsWith('http://') || text.startsWith('https://')) {
-            if (!text.includes("youtube.com") && !text.includes("youtu.be")) {
-                return reply("❌ Please provide a valid YouTube URL!");
-            }
-            const videoId = getVideoId(text);
-            if (!videoId) return reply("❌ Invalid YouTube URL!");
-            const searchFromUrl = await yts({ videoId: videoId });
-            vid = searchFromUrl;
-        } else {
-            const search = await yts(text);
-            if (!search.videos || !search.videos.length) {
-                return reply("❌ No video results found!");
-            }
-            vid = search.videos[0];
-            url = vid.url;
+        // Call NeoDev API
+        const apiUrl = `https://neotex.my.id/download/ytplay?q=${encodeURIComponent(text)}`;
+        const response = await axios.get(apiUrl);
+        
+        if (!response.data.status || !response.data.result) {
+            return reply("❌ No results found or API error!");
         }
 
-        if (!vid) return reply("❌ No results found!");
+        const videoData = response.data.result;
 
-        // Send initial message with video info
+        // Send video info first
         await conn.sendMessage(from, {
-            image: { url: vid.thumbnail },
-            caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n👁️ *Views:* ${vid.views?.toLocaleString() || 'N/A'}\n\n*Status:* Downloading Video... (360p)\n\n> ${DESCRIPTION}`
+            image: { url: videoData.thumbnail },
+            caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${videoData.title}\n📺 *Channel:* ${videoData.channel}\n🕒 *Duration:* ${videoData.duration}\n👁️ *Views:* ${videoData.views.toLocaleString()}\n🔗 *URL:* ${videoData.url}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
         }, { quoted: mek });
 
-        // Use Nanzz /ytmp4 API (auto 360p — searches by video title)
-        const apiUrl = `https://api-nanzz.my.id/docs/api/downloader/ytmp4.php?q=${encodeURIComponent(vid.title + " , 360p")}`;
-        const response = await axios.get(apiUrl, { timeout: 120000 });
-        
-        if (response.data.status && response.data.result && response.data.result.download_url) {
-            const videoData = response.data.result;
-            
-            // Send the video
+        // Download and send video
+        if (videoData.download && videoData.download.mp4) {
             await conn.sendMessage(from, {
-                video: { url: videoData.download_url },
-                mimetype: "video/mp4",
-                caption: `🎬 *${videoData.title || vid.title}*\n📺 *Quality:* ${videoData.quality || "360p"}\n\n> ${DESCRIPTION}`
+                video: { url: videoData.download.mp4 },
+                caption: `🎬 *${videoData.title}*\n⏱️ *Duration:* ${videoData.duration}\n📺 *Channel:* ${videoData.channel}\n\n> ${DESCRIPTION}`,
+                mimetype: 'video/mp4'
             }, { quoted: mek });
             
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
         } else {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-            return reply("❌ Failed to get download URL from API!");
+            return reply("❌ Video download link not available!");
         }
 
     } catch (e) {
-        console.error("Error in .video command:", e);
+        console.error("Error in .ytvideo command:", e);
         reply("❌ Error occurred, please try again later!");
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
