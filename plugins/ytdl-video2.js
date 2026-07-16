@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 // ═══════════════════════════════════════════════════════════
 cmd({
     pattern: "song",
-    alias: ["play", "music", "audio", "oo"],
+    alias: ["play11", "music", "audio", "oo"],
     desc: "Download YouTube song with multi-API fallback",
     category: "download",
     react: "🎧",
