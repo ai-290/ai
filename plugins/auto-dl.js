@@ -55,7 +55,7 @@ const platforms = {
 
 cmd({
     pattern: "autodownload",
-    alias: ["autodl", "adl"],
+    alias: ["autodl", "adl1"],
     desc: "Toggle auto downloader on/off",
     category: "download",
     filename: __filename
