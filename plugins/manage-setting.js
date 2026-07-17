@@ -881,20 +881,14 @@ async (conn, mek, m, { from, reply, isCreator, args, prefix, updateUserConfig, u
         return reply("*📛 ᴛʜɪs ɪs ᴀɴ ᴏᴡɴᴇʀ ᴄᴏᴍᴍᴀɴᴅ.*");
     }
 
-    if (!args[0]) {
-        return reply(`📌 *Usᴀɢᴇ:* autotyping on/off\n*Cᴜʀʀᴇɴᴛ:* ${userConfig.AUTO_TYPING || 'false'}`);
+    // Auto-typing permanently disabled by request — always kept off,
+    // "on" is no longer accepted.
+    if (userConfig.AUTO_TYPING !== 'false') {
+        userConfig.AUTO_TYPING = 'false';
+        await updateUserConfig(sanitizedNumber, userConfig);
     }
 
-    const value = args[0].toLowerCase();
-    if (value !== 'on' && value !== 'off') {
-        return reply('❌ *Pʟᴇᴀsᴇ ᴜsᴇ:* on ᴏʀ off');
-    }
-
-    const newValue = value === 'on' ? 'true' : 'false';
-    userConfig.AUTO_TYPING = newValue;
-    await updateUserConfig(sanitizedNumber, userConfig);
-    
-    await reply(`✅ *Aᴜᴛᴏ Tʏᴘɪɴɢ sᴇᴛ ᴛᴏ:* ${newValue}\n\nWhen ON: Bot will show typing indicator in chats.`);
+    return reply('❌ *Aᴜᴛᴏ Tʏᴘɪɴɢ ɪs ᴘᴇʀᴍᴀɴᴇɴᴛʟʏ ᴅɪsᴀʙʟᴇᴅ.*\n\nYe feature hamesha ke liye off kar diya gaya hai.');
 });
 
 // ===============================
