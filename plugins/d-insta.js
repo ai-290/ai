@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 
 cmd({
     pattern: "instagram",
-    alias: ["ig", "instadl", "instax"],
+    alias: ["ig1", "instadl", "instax"],
     desc: "Download Instagram videos and send them on WhatsApp",
     category: "downloader",
     react: "🎥",
