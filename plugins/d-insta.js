@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 
 cmd({
     pattern: "instagram",
-    alias: ["ig1", "instadl", "instax"],
+    alias: ["ig", "instadl", "insta"],
     desc: "Download Instagram videos and send them on WhatsApp",
     category: "downloader",
     react: "🎥",
@@ -32,21 +32,27 @@ async (conn, mek, m, { from, q, reply, react }) => {
         // Fetch API Data
         const { data } = await axios.get(apiUrl);
 
-        // Validate response
+        // Validate response - FIXED: Check for data.data not data.result
         if (!data || data.status !== "success" || !data.data || !data.data.url) {
             await react("❌");
             return reply("❌ Failed to fetch Instagram media. Try another link.");
         }
 
-        // Get media data
+        // Get media data - FIXED: Use data.data instead of data.result[0]
         const media = data.data;
 
-        // Send info message
+        // Validate media URL
+        if (!media.url) {
+            await react("❌");
+            return reply("❌ Media URL not found.");
+        }
+
+        // Send info message - FIXED: Updated field names
         await reply(
             `🎬 *INSTAGRAM DOWNLOADER*\n\n` +
             `📦 *Type:* ${media.type || 'Unknown'}\n` +
             `🖼 *Thumbnail:* ${media.thumbnail ? 'Available' : 'Not Found'}\n` +
-            `⚡ *Response Time:* ${data.ping || 'Fast'}\n` +
+            `⚡ *Ping:* ${data.ping || 'Fast'}\n` +
             `👤 *Creator:* ${data.creator || 'Unknown'}\n` +
             `🖥 *Server:* ${data.server || 'Unknown'}\n\n` +
             `📥 Downloading media... Please wait.`
@@ -54,7 +60,9 @@ async (conn, mek, m, { from, q, reply, react }) => {
 
         // Download media buffer
         const response = await axios.get(media.url, {
-            responseType: 'arraybuffer'
+            responseType: 'arraybuffer',
+            timeout: 60000, // Added timeout
+            maxContentLength: 100 * 1024 * 1024 // 100MB max
         });
 
         // Send video
@@ -80,7 +88,7 @@ async (conn, mek, m, { from, q, reply, react }) => {
 
     } catch (e) {
 
-        console.log("Instagram Downloader Error:", e);
+        console.log("Instagram Downloader Error:", e.message || e);
 
         await react("❌");
 
