@@ -9,8 +9,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 cmd({
-    pattern: "remini1",
-    alias: ["enhance"],
+    pattern: "remini",
+    alias: ["en"],
     react: "🪄",
     desc: "Enhance image quality using Remini AI",
     category: "image",
