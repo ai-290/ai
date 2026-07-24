@@ -12,11 +12,11 @@ function getVideoId(url) {
 }
 
 // ============================================
-// COMMAND: video (EliteProTech /ytmp4 API)
+// COMMAND: video (JerryCoder /ytmp4 API)
 // ============================================
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "vbz"],
+    alias: ["ytv", "ytmp4", "b"],
     desc: "Download YouTube video",
     category: "download",
     react: "📹",
@@ -58,17 +58,18 @@ cmd({
             caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n👁️ *Views:* ${vid.views?.toLocaleString() || 'N/A'}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
         }, { quoted: mek });
 
-        // Use EliteProTech /ytmp4 API
-        const apiUrl = `https://eliteprotech-apis.zone.id/ytmp4?url=${encodeURIComponent(url)}`;
+        // Use JerryCoder /ytmp4 API
+        const apiUrl = `https://jerrycoder.oggyapi.workers.dev/down/ytmp4?url=${encodeURIComponent(url)}`;
         const response = await axios.get(apiUrl);
         
-        if (response.data.status && response.data.result && response.data.result.url) {
-            const videoData = response.data.result;
+        // Fixed: Handle new flat response format
+        if (response.data.status === "success" && response.data.url) {
+            const videoData = response.data;
             
             // Send the video
             await conn.sendMessage(from, {
                 video: { url: videoData.url },
-                caption: `🎬 *${videoData.title || vid.title}*\n📦 *Size:* ${(videoData.size / 1024 / 1024).toFixed(2)} MB\n\n> ${DESCRIPTION}`
+                caption: `🎬 *${videoData.title || vid.title}*\n📦 *Quality:* ${videoData.quality || 'Unknown'}\n\n> ${DESCRIPTION}`
             }, { quoted: mek });
             
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
