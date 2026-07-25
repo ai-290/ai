@@ -1,11 +1,8 @@
-
 // ERFAN-MD
 import { fileURLToPath } from 'url';
-import path from 'path';
 import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 cmd({
   pattern: "del",
@@ -14,42 +11,47 @@ cmd({
   react: "🗑️",
   category: "admin",
   filename: __filename
-}, async (conn, mek, m, { reply, quoted, isCreator }) => {
+}, async (conn, mek, m, { from, reply, isCreator }) => {
   
-  let targetKey = null;
-
-  // Find the quoted message key using available methods
-  if (quoted && quoted.key) {
-    targetKey = quoted.key;
-  } else if (m.quoted && m.quoted.key) {
-    targetKey = m.quoted.key;
-  } else {
-    const context = mek.message?.extendedTextMessage?.contextInfo;
-    if (context && context.stanzaId) {
-      targetKey = {
-        remoteJid: mek.chat,
-        id: context.stanzaId,
-        participant: context.participant,
-        fromMe: context.fromMe
-      };
-    }
-  }
-
-  // If no quoted message is found
-  if (!targetKey) {
-    return reply("❌ Reply to a message!");
-  }
-
-  // Permission Check: 
-  // If the user is NOT the owner, they can only delete messages sent by the bot (fromMe: true)
-  if (!isCreator && !targetKey.fromMe) {
-    return reply("*📛 You can only delete messages sent by the bot.*");
-  }
-
-  // Attempt to delete the message
   try {
-    await conn.sendMessage(mek.chat, { delete: targetKey });
+    // Check if user replied to a message
+    if (!m.quoted && !mek.message?.extendedTextMessage?.contextInfo?.stanzaId) {
+      return reply("❌ Please reply to the message you want to delete!");
+    }
+
+    let key;
+
+    // Method 1: Get key from m.quoted (standard in most Baileys frameworks)
+    if (m.quoted && m.quoted.key) {
+      key = m.quoted.key;
+    } 
+    // Method 2: Build key from raw contextInfo (fallback)
+    else {
+      const context = mek.message?.extendedTextMessage?.contextInfo;
+      if (context && context.stanzaId) {
+        key = {
+          remoteJid: from,
+          fromMe: context.participant === conn.user?.id || context.fromMe === true,
+          id: context.stanzaId,
+          participant: context.participant
+        };
+      }
+    }
+
+    if (!key || !key.id) {
+      return reply("❌ Could not find the message key!");
+    }
+
+    // Permission Check: Non-owners can only delete bot's own messages
+    if (!isCreator && !key.fromMe) {
+      return reply("*📛 You can only delete messages sent by the bot.*");
+    }
+
+    // Official Baileys delete syntax
+    await conn.sendMessage(from, { delete: key });
+
   } catch (e) {
-    reply("❌ Failed to delete the message.");
+    console.error("Delete command error:", e);
+    reply(`❌ Failed to delete: ${e.message}`);
   }
 });
