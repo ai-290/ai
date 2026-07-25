@@ -12,11 +12,11 @@ function getVideoId(url) {
 }
 
 // ============================================
-// COMMAND: video (NexRay /ytmp4 API)
+// COMMAND: video (EliteProTech /ytmp4 API)
 // ============================================
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "vbz"],
+    alias: ["ytv", "ytmp4", "nn"],
     desc: "Download YouTube video",
     category: "download",
     react: "📹",
@@ -58,17 +58,20 @@ cmd({
             caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n👁️ *Views:* ${vid.views?.toLocaleString() || 'N/A'}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
         }, { quoted: mek });
 
-        // Use NexRay /ytmp4 API
-        const apiUrl = `https://api.nexray.eu.cc/downloader/ytmp4?url=${encodeURIComponent(url)}&resolusi=360`;
+        // Use EliteProTech /ytmp4 API
+        const apiUrl = `https://eliteprotech-apis.zone.id/ytmp4?url=${encodeURIComponent(url)}`;
         const response = await axios.get(apiUrl);
         
         if (response.data.status && response.data.result && response.data.result.url) {
             const videoData = response.data.result;
             
+            // Calculate size in MB
+            const sizeMB = videoData.size ? (videoData.size / 1024 / 1024).toFixed(2) : 'Unknown';
+            
             // Send the video
             await conn.sendMessage(from, {
                 video: { url: videoData.url },
-                caption: `🎬 *${videoData.title || vid.title}*\n📐 *Resolution:* ${videoData.resolusi}p\n🕒 *Duration:* ${videoData.duration}s\n\n> ${DESCRIPTION}`
+                caption: `🎬 *${videoData.title || vid.title}*\n📦 *Size:* ${sizeMB} MB\n📁 *Type:* ${videoData.type || 'mp4'}\n\n> ${DESCRIPTION}`
             }, { quoted: mek });
             
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
