@@ -16,7 +16,7 @@ function getVideoId(url) {
 // ============================================
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "nn"],
+    alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video",
     category: "download",
     react: "📹",
@@ -26,7 +26,6 @@ cmd({
         if (!text) return reply("🎥 Please provide a video name or link!\n\nExample: `.video https://youtu.be/e9xsmjh_O30`");
 
         const DESCRIPTION = userConfig?.DESCRIPTION || config.DESCRIPTION || "";
-
         const { default: yts } = await import('yt-search');
         
         let url = text;
@@ -39,8 +38,7 @@ cmd({
             }
             const videoId = getVideoId(text);
             if (!videoId) return reply("❌ Invalid YouTube URL!");
-            const searchFromUrl = await yts({ videoId: videoId });
-            vid = searchFromUrl;
+            vid = await yts({ videoId: videoId });
         } else {
             const search = await yts(text);
             if (!search.videos || !search.videos.length) {
@@ -55,33 +53,45 @@ cmd({
         // Send initial message with video info
         await conn.sendMessage(from, {
             image: { url: vid.thumbnail },
-            caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n👁️ *Views:* ${vid.views?.toLocaleString() || 'N/A'}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
+            caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title || 'Unknown'}\n📺 *Channel:* ${vid.author?.name || vid.author || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp || vid.duration || 'N/A'}\n👁️ *Views:* ${vid.views?.toLocaleString?.() || 'N/A'}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
         }, { quoted: mek });
 
-        // Use EliteProTech /ytmp4 API
+        // Call EliteProTech API
         const apiUrl = `https://eliteprotech-apis.zone.id/ytmp4?url=${encodeURIComponent(url)}`;
-        const response = await axios.get(apiUrl);
+        const response = await axios.get(apiUrl, { timeout: 30000 });
         
-        if (response.data.status && response.data.result && response.data.result.url) {
-            const videoData = response.data.result;
-            
-            // Calculate size in MB
-            const sizeMB = videoData.size ? (videoData.size / 1024 / 1024).toFixed(2) : 'Unknown';
-            
-            // Send the video
-            await conn.sendMessage(from, {
-                video: { url: videoData.url },
-                caption: `🎬 *${videoData.title || vid.title}*\n📦 *Size:* ${sizeMB} MB\n📁 *Type:* ${videoData.type || 'mp4'}\n\n> ${DESCRIPTION}`
-            }, { quoted: mek });
-            
-            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-        } else {
+        if (!response.data?.status || !response.data?.result?.url) {
             return reply("❌ Failed to get download URL from API!");
         }
 
+        const videoData = response.data.result;
+        const sizeMB = videoData.size ? (videoData.size / 1024 / 1024).toFixed(2) : 'Unknown';
+
+        // Download video as buffer (Baileys cannot directly stream googlevideo.com links)
+        const videoRes = await axios.get(videoData.url, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+                'Accept': '*/*'
+            }
+        });
+
+        if (!videoRes.data || videoRes.data.byteLength === 0) {
+            return reply("❌ Downloaded video is empty!");
+        }
+
+        // Send the video buffer
+        await conn.sendMessage(from, {
+            video: Buffer.from(videoRes.data),
+            caption: `🎬 *${videoData.title || vid.title || 'Video'}*\n📦 *Size:* ${sizeMB} MB\n📁 *Type:* ${videoData.type || 'mp4'}\n\n> ${DESCRIPTION}`
+        }, { quoted: mek });
+        
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+
     } catch (e) {
         console.error("Error in .video command:", e);
-        reply("❌ Error occurred, please try again later!");
+        reply(`❌ Error: ${e.message || "Something went wrong, please try again later!"}`);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
