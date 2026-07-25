@@ -12,11 +12,11 @@ function getVideoId(url) {
 }
 
 // ============================================
-// COMMAND: video (JerryCoder /ytmp4 API)
+// COMMAND: video (NexRay /ytmp4 API)
 // ============================================
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "b"],
+    alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video",
     category: "download",
     react: "📹",
@@ -58,18 +58,17 @@ cmd({
             caption: `*🎬 VIDEO DOWNLOADER*\n\n🎞️ *Title:* ${vid.title}\n📺 *Channel:* ${vid.author?.name || 'Unknown'}\n🕒 *Duration:* ${vid.timestamp}\n👁️ *Views:* ${vid.views?.toLocaleString() || 'N/A'}\n\n*Status:* Downloading Video...\n\n> ${DESCRIPTION}`
         }, { quoted: mek });
 
-        // Use JerryCoder /ytmp4 API
-        const apiUrl = `https://jerrycoder.oggyapi.workers.dev/down/ytmp4?url=${encodeURIComponent(url)}`;
+        // Use NexRay /ytmp4 API
+        const apiUrl = `https://api.nexray.eu.cc/downloader/ytmp4?url=${encodeURIComponent(url)}&resolusi=360`;
         const response = await axios.get(apiUrl);
         
-        // Fixed: Handle new flat response format
-        if (response.data.status === "success" && response.data.url) {
-            const videoData = response.data;
+        if (response.data.status && response.data.result && response.data.result.url) {
+            const videoData = response.data.result;
             
             // Send the video
             await conn.sendMessage(from, {
                 video: { url: videoData.url },
-                caption: `🎬 *${videoData.title || vid.title}*\n📦 *Quality:* ${videoData.quality || 'Unknown'}\n\n> ${DESCRIPTION}`
+                caption: `🎬 *${videoData.title || vid.title}*\n📐 *Resolution:* ${videoData.resolusi}p\n🕒 *Duration:* ${videoData.duration}s\n\n> ${DESCRIPTION}`
             }, { quoted: mek });
             
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
