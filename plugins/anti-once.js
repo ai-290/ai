@@ -4,93 +4,89 @@ import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
-const triggerWords = ["beautiful", "cute", "oh", "🙂", "nice", "ok", "❤️", "😘", "❤", "😍", "🔥", "👀", "wow", "👍"];
+// Add any trigger words or emojis here
+const triggerWords = ["vv", "viewonce", "retrive", "🔥", "👀", "save", "📥"];
 
 cmd({
   on: "body",
   dontAddCommandList: true,
   filename: __filename
-}, async (client, message, match, { from, body, isCreator }) => {
+}, async (client, message, match, { from, body, sender, isCreator }) => {
   try {
+    // 1. Check trigger word
     const msgBody = (body || "").toLowerCase().trim();
     if (!triggerWords.includes(msgBody)) return;
+
+    // 2. Owner only (remove this line if you want everyone to use it)
     if (!isCreator) return;
 
-    // --- STEP 1: Get the quoted message ---
-    let quotedMsg = null;
-
-    // Try framework's quoted object first
-    if (match?.quoted) {
-      quotedMsg = match.quoted;
-    }
-    // Fallback: build from raw contextInfo
-    else if (message?.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-      const ctx = message.message.extendedTextMessage.contextInfo;
-      quotedMsg = {
-        key: {
-          remoteJid: from,
-          fromMe: ctx.participant === client.user?.id,
-          id: ctx.stanzaId,
-          participant: ctx.participant
-        },
-        message: ctx.quotedMessage
-      };
+    // 3. Must be replying to a message
+    const context = message?.message?.extendedTextMessage?.contextInfo;
+    if (!context?.quotedMessage) {
+      return await client.sendMessage(from, {
+        text: "*🍁 Please reply to a view once message!*"
+      }, { quoted: message });
     }
 
-    if (!quotedMsg) {
-      console.log("VV: No quoted message found");
-      return;
-    }
-
-    // --- STEP 2: Unwrap view-once message & detect media type ---
-    const msg = quotedMsg.message || quotedMsg;
+    // 4. Unwrap view-once containers
+    let quotedMsg = context.quotedMessage;
     let innerMessage = null;
+
+    if (quotedMsg.viewOnceMessage?.message) {
+      innerMessage = quotedMsg.viewOnceMessage.message;
+    } else if (quotedMsg.viewOnceMessageV2?.message) {
+      innerMessage = quotedMsg.viewOnceMessageV2.message;
+    } else if (quotedMsg.viewOnceMessageV2Extension?.message) {
+      innerMessage = quotedMsg.viewOnceMessageV2Extension.message;
+    } else {
+      innerMessage = quotedMsg; // Regular media
+    }
+
+    // 5. Detect media type
     let mediaType = null;
-
-    // WhatsApp wraps view-once media in these containers
-    if (msg.viewOnceMessage?.message) {
-      innerMessage = msg.viewOnceMessage.message;
-    } else if (msg.viewOnceMessageV2?.message) {
-      innerMessage = msg.viewOnceMessageV2.message;
-    } else if (msg.viewOnceMessageV2Extension?.message) {
-      innerMessage = msg.viewOnceMessageV2Extension.message;
-    } else {
-      innerMessage = msg; // Regular media (not wrapped)
+    if (innerMessage.imageMessage) mediaType = 'image';
+    else if (innerMessage.videoMessage) mediaType = 'video';
+    else if (innerMessage.audioMessage) mediaType = 'audio';
+    else {
+      return await client.sendMessage(from, {
+        text: "❌ Only image, video, and audio messages are supported"
+      }, { quoted: message });
     }
 
-    if (innerMessage.imageMessage) {
-      mediaType = 'image';
-    } else if (innerMessage.videoMessage) {
-      mediaType = 'video';
-    } else if (innerMessage.audioMessage) {
-      mediaType = 'audio';
-    } else {
-      console.log("VV: Quoted message is not image/video/audio");
-      return;
-    }
+    // 6. Build proper message object for Baileys download
+    const msgForDownload = {
+      key: {
+        remoteJid: from,
+        fromMe: false,
+        id: context.stanzaId,
+        participant: context.participant
+      },
+      message: quotedMsg
+    };
 
-    // --- STEP 3: Download the media buffer ---
+    // 7. Download buffer
     let buffer;
     try {
-      if (typeof quotedMsg.download === 'function') {
-        buffer = await quotedMsg.download();
-      } else if (typeof client.downloadMediaMessage === 'function') {
-        buffer = await client.downloadMediaMessage(quotedMsg);
+      if (typeof client.downloadMediaMessage === 'function') {
+        buffer = await client.downloadMediaMessage(msgForDownload);
       } else {
-        console.log("VV: No download method available");
+        console.log("VV: downloadMediaMessage not available");
         return;
       }
     } catch (dlErr) {
-      console.error("VV Download failed:", dlErr.message);
-      return;
+      console.error("VV Download Error:", dlErr.message);
+      return await client.sendMessage(from, {
+        text: "❌ Failed to download media!"
+      }, { quoted: message });
     }
 
     if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
-      console.log("VV: Empty buffer");
-      return;
+      return await client.sendMessage(from, {
+        text: "❌ Downloaded media is empty!"
+      }, { quoted: message });
     }
 
-    // --- STEP 4: Build the message content ---
+    // 8. Build message content
     let content = {};
     if (mediaType === 'image') {
       content = {
@@ -112,12 +108,18 @@ cmd({
       };
     }
 
-    // --- STEP 5: Send to bot's own inbox (same as connect message in index.js) ---
-    const selfJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
-    await client.sendMessage(selfJid, content);
-    console.log(`VV: Sent ${mediaType} to inbox`);
+    // 9. Send to triggerer's inbox (DM)
+    await client.sendMessage(sender, content);
+
+    // 10. Optional confirmation react in chat
+    await client.sendMessage(from, {
+      react: { text: '✅', key: message.key }
+    });
 
   } catch (error) {
-    console.error("VV Command Error:", error.message || error);
+    console.error("VV Error:", error);
+    await client.sendMessage(from, {
+      text: "❌ Error fetching vv message:\n" + (error.message || error)
+    }, { quoted: message });
   }
 });
