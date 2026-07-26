@@ -16,7 +16,7 @@ let autoDownloaderEnabled = false;
 const platforms = {
     youtube: {
         pattern: /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})(?:\S+)?/gi,
-        api: "https://api.deline.web.id/downloader/youtube", // ✅ NEW API
+        api: "https://api.deline.web.id/downloader/youtube",
         method: "video"
     },
     facebook: {
@@ -26,12 +26,12 @@ const platforms = {
     },
     instagram: {
         pattern: /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:p|reel|tv|reels)\/[^\s\/]+/gi,
-        api: "https://api.nexray.eu.cc/downloader/v2/instagram",
+        api: "https://jerrycoder.oggyapi.workers.dev/down/insta",
         method: "media"
     },
     tiktok: {
         pattern: /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)\/[^\s]+/gi,
-        api: "https://api.nexray.eu.cc/downloader/tiktok",
+        api: "https://tikwm.com/api",
         method: "video"
     },
     github: {
@@ -196,7 +196,7 @@ async function handleApiDownload(client, from, url, platformType, caption, messa
     }
 }
 
-// ---------- YOUTUBE HANDLER (UPDATED WITH NEW API) ----------
+// ---------- YOUTUBE HANDLER ----------
 
 async function handleYouTube(client, from, url, caption, message) {
     try {
@@ -214,24 +214,14 @@ async function handleYouTube(client, from, url, caption, message) {
             throw new Error("No media streams found");
         }
 
-        // Priority: find best combined video+audio (has audioQuality) OR first video with url
-        // formatId 18 = mp4 360p with audio (best all-in-one choice)
         let selectedMedia = null;
-        
-        // 1st choice: combined video+audio in mp4 (format 18)
         selectedMedia = medias.find(m => m.formatId === 18 && m.url);
-        
-        // 2nd choice: any mp4 video that has audio (audioQuality is not null)
         if (!selectedMedia) {
             selectedMedia = medias.find(m => m.type === 'video' && m.ext === 'mp4' && m.audioQuality && m.url);
         }
-        
-        // 3rd choice: any video with url
         if (!selectedMedia) {
             selectedMedia = medias.find(m => m.type === 'video' && m.url);
         }
-        
-        // 4th choice: first media with any url
         if (!selectedMedia) {
             selectedMedia = medias.find(m => m.url);
         }
@@ -257,70 +247,83 @@ async function handleYouTube(client, from, url, caption, message) {
     }
 }
 
-// ---------- INSTAGRAM HANDLER ----------
+// ---------- INSTAGRAM HANDLER (FIXED - Using Working API) ----------
 
 async function handleInstagram(client, from, url, caption, message) {
     try {
-        const apiUrl = `https://api.nexray.eu.cc/downloader/v2/instagram?url=${encodeURIComponent(url)}`;
-        const response = await axios.get(apiUrl, { timeout: 30000 });
+        const apiUrl = `https://jerrycoder.oggyapi.workers.dev/down/insta?url=${encodeURIComponent(url)}`;
+        const { data } = await axios.get(apiUrl, { timeout: 30000 });
         
-        if (!response.data?.status || !response.data.result) {
+        if (!data || data.status !== "success" || !data.data || !data.data.url) {
             throw new Error("Failed to fetch Instagram media");
         }
 
-        const result = response.data.result;
-        const mediaItems = result.media || [];
-        
-        if (mediaItems.length === 0) {
-            throw new Error("No media found");
-        }
+        const media = data.data;
+        const finalCaption = `🎬 *INSTAGRAM DOWNLOADER*\n📦 *Type:* ${media.type || 'Unknown'}\n\n${caption}`;
 
-        const finalCaption = result.title ? `*${result.title}*\n\n${caption}` : caption;
-
-        for (const item of mediaItems) {
-            const mediaType = item.type === 'mp4' ? 'video' : 'image';
-            
+        if (media.type === "video") {
             await client.sendMessage(from, {
-                [mediaType]: { url: item.url },
+                video: { url: media.url },
                 caption: finalCaption,
-                mimetype: mediaType === 'video' ? 'video/mp4' : 'image/jpeg'
+                mimetype: 'video/mp4'
             }, { quoted: message });
-            
-            await new Promise(resolve => setTimeout(resolve, 1500));
+        } else {
+            await client.sendMessage(from, {
+                image: { url: media.url },
+                caption: finalCaption,
+                mimetype: 'image/jpeg'
+            }, { quoted: message });
         }
     } catch (error) {
-        console.error("[AUTO-DL] Instagram error:", error);
+        console.error("[AUTO-DL] Instagram error:", error.message);
         throw error;
     }
 }
 
-// ---------- TIKTOK HANDLER ----------
+// ---------- TIKTOK HANDLER (FIXED - Using Working API) ----------
 
 async function handleTikTok(client, from, url, caption, message) {
     try {
-        const apiUrl = `https://api.nexray.eu.cc/downloader/tiktok?url=${encodeURIComponent(url)}`;
-        const response = await axios.get(apiUrl, { timeout: 30000 });
+        const apiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
+        const { data } = await axios.get(apiUrl, { timeout: 20000 });
         
-        if (!response.data?.status || !response.data.result) {
+        if (!data || data.code !== 0 || !data.data) {
             throw new Error("Failed to fetch TikTok video");
         }
 
-        const result = response.data.result;
-        const videoUrl = result.data;
-        
-        if (!videoUrl) {
-            throw new Error("No video URL found");
+        const res = data.data;
+        const title = res.title || 'TikTok Video';
+        const uploader = res.author?.nickname || res.author?.unique_id || 'Unknown';
+        const finalCaption = `🎵 *TIKTOK DOWNLOADER*\n📝 *Title:* ${title}\n👤 *Author:* ${uploader}\n\n${caption}`;
+
+        // If it's a slideshow (images)
+        if (Array.isArray(res.images) && res.images.length > 0) {
+            let total = res.images.length;
+            let index = 1;
+
+            for (const img of res.images) {
+                await client.sendMessage(from, {
+                    image: { url: img },
+                    caption: `🖼️ *Slide ${index} / ${total}*\n\n${finalCaption}`
+                }, { quoted: message });
+                index++;
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+            return;
         }
 
-        const finalCaption = result.title ? `*${result.title}*\n\n${caption}` : caption;
-
-        await client.sendMessage(from, {
-            video: { url: videoUrl },
-            mimetype: 'video/mp4',
-            caption: finalCaption
-        }, { quoted: message });
+        // If it's a video
+        if (res.play) {
+            await client.sendMessage(from, {
+                video: { url: res.play },
+                mimetype: 'video/mp4',
+                caption: finalCaption
+            }, { quoted: message });
+        } else {
+            throw new Error("No video or images found");
+        }
     } catch (error) {
-        console.error("[AUTO-DL] TikTok error:", error);
+        console.error("[AUTO-DL] TikTok error:", error.message);
         throw error;
     }
 }
