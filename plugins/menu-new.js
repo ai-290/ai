@@ -137,11 +137,10 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
         const BOT_IMAGE = userConfig?.BOT_IMAGE || userConfig?.BOT_MEDIA_URL || config.BOT_IMAGE || config.BOT_MEDIA_URL;
         
         // Main menu text with sidebar design from Menu 2
-        let dec = `━━━━━━━━━━
-◉  ${BOT_NAME}
-
-
-     ━━━━━━━━ 🤖 ʙᴏᴛ ɪɴғᴏ
+        let dec = `
+  
+━━━━━━ 🤖 ʙᴏᴛ ɪɴғᴏ ━━━━━━
+◉ 🎉 ${BOT_NAME}
 ◉ 👑 ${toSmallCaps('Owner')}: ${OWNER_NAME}
 ◉ 📜 ${toSmallCaps('Commands')}: ${totalCommands}
 ◉ ⏱️ ${toSmallCaps('Runtime')}: ${runtime(process.uptime())}
