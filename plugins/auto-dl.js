@@ -7,49 +7,8 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// plugins/autodl.js
-
 // Global variable to track auto-downloader status - starts DISABLED
 let autoDownloaderEnabled = false;
-
-// Platform URLs and their APIs
-const platforms = {
-    youtube: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})(?:\S+)?/gi,
-        api: "https://api.deline.web.id/downloader/youtube",
-        method: "video"
-    },
-    facebook: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.watch|fb\.com)\/[^\s]+/gi,
-        api: "https://api.nexray.eu.cc/downloader/facebook",
-        method: "video"
-    },
-    instagram: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:p|reel|tv|reels)\/[^\s\/]+/gi,
-        api: "https://jerrycoder.oggyapi.workers.dev/down/insta",
-        method: "media"
-    },
-    tiktok: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)\/[^\s]+/gi,
-        api: "https://tikwm.com/api",
-        method: "video"
-    },
-    github: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?github\.com\/[^\s]+/gi,
-        api: "https://api.nexray.eu.cc/downloader/github",
-        method: "file"
-    },
-    mediafire: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?mediafire\.com\/[^\s]+/gi,
-        api: "https://api.nexray.eu.cc/downloader/mediafire",
-        method: "file"
-    },
-    mega: {
-        pattern: /(?:https?:\/\/)?mega\.nz\/[^\s]+/gi,
-        api: "https://api.nexray.eu.cc/downloader/mega",
-        method: "file"
-    }
-};
 
 // ---------- COMMAND TO TOGGLE AUTO-DOWNLOADER ----------
 
@@ -99,29 +58,62 @@ cmd({
     }
 });
 
-// ---------- HELPER FUNCTIONS ----------
+// ---------- ROBUST URL DETECTOR ----------
+
+function detectPlatform(text) {
+    if (!text || typeof text !== 'string') return null;
+    
+    // YouTube
+    const yt = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/i);
+    if (yt) return { platform: 'youtube', url: normalizeUrl(yt[0]) };
+    
+    // Instagram - ANY instagram.com or instagr.am link
+    const ig = text.match(/(?:https?:\/\/)?(?:www\.)?(?:instagram\.com|instagr\.am)\/[^\s]+/i);
+    if (ig) return { platform: 'instagram', url: normalizeUrl(ig[0]) };
+    
+    // TikTok - ANY tiktok domain
+    const tt = text.match(/(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|m\.tiktok\.com)\/[^\s]+/i);
+    if (tt) return { platform: 'tiktok', url: normalizeUrl(tt[0]) };
+    
+    // Facebook
+    const fb = text.match(/(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.watch|fb\.com|m\.facebook\.com)\/[^\s]+/i);
+    if (fb) return { platform: 'facebook', url: normalizeUrl(fb[0]) };
+    
+    // GitHub
+    const gh = text.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/[^\s]+/i);
+    if (gh) return { platform: 'github', url: normalizeUrl(gh[0]) };
+    
+    // MediaFire
+    const mf = text.match(/(?:https?:\/\/)?(?:www\.)?mediafire\.com\/[^\s]+/i);
+    if (mf) return { platform: 'mediafire', url: normalizeUrl(mf[0]) };
+    
+    // Mega
+    const mg = text.match(/(?:https?:\/\/)?mega\.nz\/[^\s]+/i);
+    if (mg) return { platform: 'mega', url: normalizeUrl(mg[0]) };
+    
+    return null;
+}
+
+function normalizeUrl(url) {
+    url = url.trim();
+    // Remove trailing punctuation that might be caught by regex
+    url = url.replace(/[.,;!?]+$/, '');
+    if (!url.startsWith('http')) {
+        url = 'https://' + url;
+    }
+    return url;
+}
 
 const createCaption = () => {
     return `> *© ${config.BOT_NAME} Auto Downloader*`;
 };
 
-const extractUrl = (text, pattern) => {
-    if (!text) return null;
-    const match = text.match(pattern);
-    if (match && match[0]) {
-        let url = match[0].trim();
-        if (!url.startsWith('http')) {
-            url = 'https://' + url;
-        }
-        return url;
-    }
-    return null;
-};
-
 // ---------- MAIN AUTO-DOWNLOAD HANDLER (BODY LISTENER) ----------
 
 cmd({
-    'on': "body"
+    on: "body",
+    dontAddCommandList: true,
+    filename: __filename
 }, async (client, message, store, {
     from,
     body,
@@ -134,32 +126,33 @@ cmd({
 }) => {
     try {
         if (!autoDownloaderEnabled) return;
-        if (!body || typeof body !== 'string' || body.length < 10) return;
-
-        let matchedPlatform = null;
-        let matchedUrl = null;
         
-        for (const [platform, data] of Object.entries(platforms)) {
-            const url = extractUrl(body, data.pattern);
-            if (url) {
-                matchedPlatform = platform;
-                matchedUrl = url;
-                console.log(`[AUTO-DL] Detected ${platform} URL: ${url}`);
-                break;
-            }
+        // DEBUG: Log every message body so you can see what's happening
+        console.log("[AUTO-DL] Body received:", body);
+        
+        if (!body || typeof body !== 'string') {
+            console.log("[AUTO-DL] Empty or invalid body, skipping");
+            return;
         }
+
+        const detected = detectPlatform(body);
         
-        if (!matchedPlatform || !matchedUrl) return;
+        if (!detected) {
+            console.log("[AUTO-DL] No platform URL detected in body");
+            return;
+        }
+
+        console.log(`[AUTO-DL] Detected ${detected.platform}: ${detected.url}`);
 
         const caption = createCaption();
         
         await client.sendMessage(from, { react: { text: '⏳', key: message.key } });
 
         try {
-            await handleApiDownload(client, from, matchedUrl, matchedPlatform, caption, message);
+            await handleApiDownload(client, from, detected.url, detected.platform, caption, message);
             await client.sendMessage(from, { react: { text: '✅', key: message.key } });
         } catch (apiError) {
-            console.error(`[AUTO-DL] Error for ${matchedPlatform}:`, apiError.message);
+            console.error(`[AUTO-DL] Error for ${detected.platform}:`, apiError.message);
             await client.sendMessage(from, { react: { text: '❌', key: message.key } });
         }
 
@@ -242,17 +235,20 @@ async function handleYouTube(client, from, url, caption, message) {
         }, { quoted: message });
 
     } catch (error) {
-        console.error("[AUTO-DL] YouTube error:", error);
+        console.error("[AUTO-DL] YouTube error:", error.message);
         throw error;
     }
 }
 
-// ---------- INSTAGRAM HANDLER (FIXED - Using Working API) ----------
+// ---------- INSTAGRAM HANDLER (Working API) ----------
 
 async function handleInstagram(client, from, url, caption, message) {
     try {
+        console.log("[AUTO-DL] Instagram downloading:", url);
         const apiUrl = `https://jerrycoder.oggyapi.workers.dev/down/insta?url=${encodeURIComponent(url)}`;
         const { data } = await axios.get(apiUrl, { timeout: 30000 });
+        
+        console.log("[AUTO-DL] Instagram API response:", data.status);
         
         if (!data || data.status !== "success" || !data.data || !data.data.url) {
             throw new Error("Failed to fetch Instagram media");
@@ -280,12 +276,15 @@ async function handleInstagram(client, from, url, caption, message) {
     }
 }
 
-// ---------- TIKTOK HANDLER (FIXED - Using Working API) ----------
+// ---------- TIKTOK HANDLER (Working API) ----------
 
 async function handleTikTok(client, from, url, caption, message) {
     try {
+        console.log("[AUTO-DL] TikTok downloading:", url);
         const apiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
         const { data } = await axios.get(apiUrl, { timeout: 20000 });
+        
+        console.log("[AUTO-DL] TikTok API response code:", data?.code);
         
         if (!data || data.code !== 0 || !data.data) {
             throw new Error("Failed to fetch TikTok video");
@@ -354,7 +353,7 @@ async function handleFacebook(client, from, url, caption, message) {
             caption: finalCaption
         }, { quoted: message });
     } catch (error) {
-        console.error("[AUTO-DL] Facebook error:", error);
+        console.error("[AUTO-DL] Facebook error:", error.message);
         throw error;
     }
 }
@@ -387,7 +386,7 @@ async function handleGitHub(client, from, url, caption, message) {
             caption: finalCaption
         }, { quoted: message });
     } catch (error) {
-        console.error("[AUTO-DL] GitHub error:", error);
+        console.error("[AUTO-DL] GitHub error:", error.message);
         throw error;
     }
 }
@@ -433,7 +432,7 @@ async function handleMediaFire(client, from, url, caption, message) {
             }, { quoted: message });
         }
     } catch (error) {
-        console.error("[AUTO-DL] MediaFire error:", error);
+        console.error("[AUTO-DL] MediaFire error:", error.message);
         throw error;
     }
 }
@@ -479,7 +478,7 @@ async function handleMega(client, from, url, caption, message) {
             }, { quoted: message });
         }
     } catch (error) {
-        console.error("[AUTO-DL] Mega error:", error);
+        console.error("[AUTO-DL] Mega error:", error.message);
         throw error;
     }
 }
