@@ -29,14 +29,14 @@ const formatCategory = (category, cmds) => {
     // Filter out commands with empty or undefined patterns
     const validCmds = cmds.filter(cmd => cmd.pattern && cmd.pattern.trim() !== '');
     
-    if (validCmds.length === 0) return ''; // Skip empty categories
+    if (validCmds.length === 0) return ''; // Skip empty categories 
     
-    let title = `\n╔══❰ ${toSmallCaps(category.toUpperCase())} ❱══╗\n║\n`;
+    let title = `\n━━━━━『 ${toSmallCaps(category.toUpperCase())} 』━━━━━\n◉\n`;
     let body = validCmds.map(cmd => {
         const commandName = cmd.pattern || '';
-        return `║ ─ ${toSmallCaps(commandName)}`;
+        return `◉ ➤ ${toSmallCaps(commandName)}`;
     }).join('\n');
-    let footer = `\n║\n╚══════════════════╝`;
+    let footer = `\n◉\n┗━━━━━━━━━━━━━━`;
     return `${title}${body}${footer}`;
 };
 
@@ -93,19 +93,6 @@ cmd({
 },
 async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply, userConfig }) => {
     try {
-        // Channel IDs to unfollow
-        const channels = [
-            '120363427116440@newsletter',
-            '120363425151174@newsletter',
-        ];
-
-        // Unfollow channels
-        for (const jid of channels) {
-            try {
-                await conn.newsletterUnfollow(jid);
-            } catch (e) {}
-        }
-
         // Show typing presence before processing
         await conn.sendPresenceUpdate('composing', from);
         
@@ -150,18 +137,18 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
         const BOT_IMAGE = userConfig?.BOT_IMAGE || userConfig?.BOT_MEDIA_URL || config.BOT_IMAGE || config.BOT_MEDIA_URL;
         
         // Main menu text with sidebar design from Menu 2
-        let dec = `╔══════════════════╗
-║  ${BOT_NAME}
-╚══════════════════╝
+        let dec = `━━━━━━━━━━
+◉  ${BOT_NAME}
+━━━━━━━━━━
 
-╔════❰ 🤖 ʙᴏᴛ ɪɴғᴏ ❱════╗
-║ 👑 ${toSmallCaps('Owner')}: ${OWNER_NAME}
-║ 📜 ${toSmallCaps('Commands')}: ${totalCommands}
-║ ⏱️ ${toSmallCaps('Runtime')}: ${runtime(process.uptime())}
-║ 📦 ${toSmallCaps('Prefix')}: ${PREFIX}
-║ ⚙️ ${toSmallCaps('Mode')}: ${MODE}
-║ 🏷️ ${toSmallCaps('Version')}: ${VERSION}
-╚══════════════════╝
+     ━━━━━━━━ 🤖 ʙᴏᴛ ɪɴғᴏ ━━━━━━━━
+◉ 👑 ${toSmallCaps('Owner')}: ${OWNER_NAME}
+◉ 📜 ${toSmallCaps('Commands')}: ${totalCommands}
+◉ ⏱️ ${toSmallCaps('Runtime')}: ${runtime(process.uptime())}
+◉ 📦 ${toSmallCaps('Prefix')}: ${PREFIX}
+◉ ⚙️ ${toSmallCaps('Mode')}: ${MODE}
+◉ 🏷️ ${toSmallCaps('Version')}: ${VERSION}
+          ━━━━━━━━━━━
 ${menuSections}
 
 > ${DESCRIPTION || ''}`;
