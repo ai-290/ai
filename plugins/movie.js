@@ -1,4 +1,3 @@
-
 // ERFAN-MD
 import { fileURLToPath } from 'url';
 import axios from 'axios';
@@ -10,11 +9,11 @@ const __filename = fileURLToPath(import.meta.url);
 
 
 // ═══════════════════════════════════════════════════════════
-// 🎭 REACTION GIFS - SFW commands fixed (delirius.store was down)
-// SFW (36 commands) now use two working APIs:
-//   • https://api.waifu.pics/sfw/{endpoint}      -> { url }
-//   • https://api.purrbot.site/v2/img/sfw/{endpoint}/gif -> { link }
-// Owner-only (18+) commands were left untouched, still on delirius.store
+// 🎭 REACTION GIFS - SFW commands (36) fixed
+// waifu.pics stopped resolving (ENOTFOUND) -> replaced with:
+//   • https://nekos.best/api/v2/{endpoint}                -> results[0].url
+//   • https://api.purrbot.site/v2/img/sfw/{endpoint}/gif  -> link
+// Owner-only (18+) commands untouched, still on delirius.store
 // ═══════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════
@@ -41,14 +40,14 @@ cmd(
                 ? `${sender} is crying everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/cry";
+            const apiUrl = "https://nekos.best/api/v2/cry";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -91,14 +90,14 @@ cmd(
                 ? `${sender} is cuddling everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/cuddle";
+            const apiUrl = "https://nekos.best/api/v2/cuddle";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -141,14 +140,14 @@ cmd(
                 ? `${sender} is bullying everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/bully";
+            const apiUrl = "https://nekos.best/api/v2/baka";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -191,14 +190,14 @@ cmd(
                 ? `${sender} is hugging everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/hug";
+            const apiUrl = "https://nekos.best/api/v2/hug";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -241,14 +240,14 @@ cmd(
                 ? `${sender} is awooing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/awoo";
+            const apiUrl = "https://nekos.best/api/v2/happy";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -291,14 +290,14 @@ cmd(
                 ? `${sender} is licking everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/lick";
+            const apiUrl = "https://api.purrbot.site/v2/img/sfw/lick/gif";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data || res.data.error || !res.data.link) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.link;
 
             await conn.sendMessage(
                 mek.chat,
@@ -341,14 +340,14 @@ cmd(
                 ? `${sender} is patting everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/pat";
+            const apiUrl = "https://nekos.best/api/v2/pat";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -391,14 +390,14 @@ cmd(
                 ? `${sender} is feeling smug everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/smug";
+            const apiUrl = "https://nekos.best/api/v2/smug";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -441,14 +440,14 @@ cmd(
                 ? `${sender} is bonking everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/bonk";
+            const apiUrl = "https://nekos.best/api/v2/bonk";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -491,14 +490,14 @@ cmd(
                 ? `${sender} is yeeting everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/yeet";
+            const apiUrl = "https://nekos.best/api/v2/yeet";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -541,14 +540,14 @@ cmd(
                 ? `${sender} is blushing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/blush";
+            const apiUrl = "https://nekos.best/api/v2/blush";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -591,14 +590,14 @@ cmd(
                 ? `${sender} wants to hold hands with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/handhold";
+            const apiUrl = "https://nekos.best/api/v2/handhold";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -641,14 +640,14 @@ cmd(
                 ? `${sender} is high-fiving everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/highfive";
+            const apiUrl = "https://nekos.best/api/v2/highfive";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -691,14 +690,14 @@ cmd(
                 ? `${sender} is nomming everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/nom";
+            const apiUrl = "https://nekos.best/api/v2/nom";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -741,14 +740,14 @@ cmd(
                 ? `${sender} is waving at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/wave";
+            const apiUrl = "https://nekos.best/api/v2/wave";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -791,14 +790,14 @@ cmd(
                 ? `${sender} is smiling at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/smile";
+            const apiUrl = "https://nekos.best/api/v2/smile";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -841,14 +840,14 @@ cmd(
                 ? `${sender} is winking at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/wink";
+            const apiUrl = "https://nekos.best/api/v2/wink";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -891,14 +890,14 @@ cmd(
                 ? `${sender} is happy with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/happy";
+            const apiUrl = "https://nekos.best/api/v2/happy";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -941,14 +940,14 @@ cmd(
                 ? `${sender} is glomping everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/glomp";
+            const apiUrl = "https://nekos.best/api/v2/cuddle";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -991,14 +990,14 @@ cmd(
                 ? `${sender} is biting everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/bite";
+            const apiUrl = "https://nekos.best/api/v2/bite";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1041,14 +1040,14 @@ cmd(
                 ? `${sender} poked everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/poke";
+            const apiUrl = "https://nekos.best/api/v2/poke";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1091,14 +1090,14 @@ cmd(
                 ? `${sender} finds everyone cringe`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/cringe";
+            const apiUrl = "https://nekos.best/api/v2/confused";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1141,14 +1140,14 @@ cmd(
                 ? `${sender} is dancing with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/dance";
+            const apiUrl = "https://nekos.best/api/v2/dance";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1191,14 +1190,14 @@ cmd(
                 ? `${sender} killed everyone`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/kill";
+            const apiUrl = "https://nekos.best/api/v2/punch";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1241,14 +1240,14 @@ cmd(
                 ? `${sender} slapped everyone`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/slap";
+            const apiUrl = "https://nekos.best/api/v2/slap";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1291,14 +1290,14 @@ cmd(
                 ? `${sender} kissed everyone`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/kiss";
+            const apiUrl = "https://nekos.best/api/v2/kiss";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1341,14 +1340,14 @@ cmd(
                 ? `${sender} is angry at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.purrbot.site/v2/img/sfw/angry/gif";
+            const apiUrl = "https://nekos.best/api/v2/angry";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || res.data.error || !res.data.link) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.link;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1541,14 +1540,14 @@ cmd(
                 ? `${sender} is kicking everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/kick";
+            const apiUrl = "https://nekos.best/api/v2/kick";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1641,14 +1640,14 @@ cmd(
                 ? `${sender} is pouting at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.purrbot.site/v2/img/sfw/pout/gif";
+            const apiUrl = "https://nekos.best/api/v2/pout";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || res.data.error || !res.data.link) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.link;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1741,14 +1740,14 @@ cmd(
                 ? `${sender} is tickling everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.purrbot.site/v2/img/sfw/tickle/gif";
+            const apiUrl = "https://nekos.best/api/v2/tickle";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || res.data.error || !res.data.link) {
+            if (!res.data?.results?.[0]?.url) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.link;
+            let videoUrl = res.data.results[0].url;
 
             await conn.sendMessage(
                 mek.chat,
@@ -1791,14 +1790,14 @@ cmd(
                 ? `${sender} is nekoing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            const apiUrl = "https://api.waifu.pics/sfw/neko";
+            const apiUrl = "https://api.purrbot.site/v2/img/sfw/neko/gif";
             let res = await axios.get(apiUrl);
 
-            if (!res.data || !res.data.url) {
+            if (!res.data || res.data.error || !res.data.link) {
                 throw new Error("API response invalid");
             }
 
-            let videoUrl = res.data.url;
+            let videoUrl = res.data.link;
 
             await conn.sendMessage(
                 mek.chat,
