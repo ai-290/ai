@@ -21,7 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 // ═══════════════════════════════════════════════════════════
 cmd(
     {
-        pattern: "cry1",
+        pattern: "crys",
         desc: "Send a cry reaction GIF.",
         category: "fun",
         react: "😢",
