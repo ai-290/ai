@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 // ============================================
 cmd({
     pattern: "video2",
-    alias: ["ytvideo", "xc"],
+    alias: ["ytvideo", "xv"],
     desc: "Download YouTube video",
     category: "downloader",
     react: "📹",
