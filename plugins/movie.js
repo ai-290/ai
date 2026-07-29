@@ -67,7 +67,7 @@ async function getReactionVideo(nbEndpoint, pbEndpoint) {
 // ═══════════════════════════════════════════════════════════
 cmd(
     {
-        pattern: "cry11",
+        pattern: "cry2",
         desc: "Send a cry reaction GIF.",
         category: "fun",
         react: "😢",
