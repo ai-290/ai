@@ -1,12 +1,8 @@
 // ERFAN-MD
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import crypto from 'crypto';
 import { cmd } from '../command.js';
+import { fetchGif, gifToVideo } from '../lib/fetchgif.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -20,58 +16,13 @@ const __filename = fileURLToPath(import.meta.url);
 //
 // NOTE: nekos.best / purrbot.site return raw .gif files, not mp4.
 // WhatsApp's gifPlayback:true on a videoMessage requires an actual
-// mp4 stream to render/download correctly - a raw gif container will
-// just show a broken/empty player. So every gif is downloaded and
-// transcoded to mp4 with ffmpeg before being sent.
-//
-// REQUIRES ffmpeg. Run: npm install ffmpeg-static
-// (falls back to a system "ffmpeg" binary on PATH if that package
-// isn't installed, in case you already have ffmpeg via a buildpack)
+// mp4 stream to render/download correctly - a raw gif container just
+// shows a broken/empty player. So every gif is downloaded and
+// transcoded to mp4 using the project's existing lib/fetchgif.js
+// (fetchGif + gifToVideo, built on @ffmpeg-installer/ffmpeg - a
+// bundled static binary, so it works on Heroku with no system ffmpeg
+// or extra buildpack needed).
 // ═══════════════════════════════════════════════════════════
-
-let ffmpegPath = "ffmpeg";
-try {
-    const ffmpegStatic = await import("ffmpeg-static");
-    if (ffmpegStatic?.default) ffmpegPath = ffmpegStatic.default;
-} catch (e) {
-    // ffmpeg-static not installed, will try system ffmpeg on PATH
-}
-
-/**
- * Converts a GIF buffer to an MP4 buffer (h264/yuv420p, even dimensions)
- * so WhatsApp can actually decode it as a gifPlayback video message.
- */
-async function gifToMp4(gifBuffer) {
-    const tmpDir = os.tmpdir();
-    const id = crypto.randomBytes(6).toString("hex");
-    const inPath = path.join(tmpDir, `${id}.gif`);
-    const outPath = path.join(tmpDir, `${id}.mp4`);
-
-    fs.writeFileSync(inPath, gifBuffer);
-
-    await new Promise((resolve, reject) => {
-        const ff = spawn(ffmpegPath, [
-            "-y",
-            "-i", inPath,
-            "-movflags", "faststart",
-            "-pix_fmt", "yuv420p",
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-            outPath,
-        ]);
-        let stderr = "";
-        ff.stderr.on("data", (d) => (stderr += d));
-        ff.on("error", (err) => reject(new Error(`ffmpeg not found/failed to start: ${err.message}`)));
-        ff.on("close", (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-300)}`));
-        });
-    });
-
-    const mp4Buffer = fs.readFileSync(outPath);
-    fs.unlink(inPath, () => {});
-    fs.unlink(outPath, () => {});
-    return mp4Buffer;
-}
 
 /**
  * Gets a reaction GIF url from nekos.best, falling back to purrbot.site.
@@ -106,9 +57,8 @@ async function getReactionGifUrl(nbEndpoint, pbEndpoint) {
  */
 async function getReactionVideo(nbEndpoint, pbEndpoint) {
     const gifUrl = await getReactionGifUrl(nbEndpoint, pbEndpoint);
-    const gifRes = await axios.get(gifUrl, { responseType: "arraybuffer" });
-    const gifBuffer = Buffer.from(gifRes.data);
-    return await gifToMp4(gifBuffer);
+    const gifBuffer = await fetchGif(gifUrl);
+    return await gifToVideo(gifBuffer);
 }
 
 
@@ -117,7 +67,7 @@ async function getReactionVideo(nbEndpoint, pbEndpoint) {
 // ═══════════════════════════════════════════════════════════
 cmd(
     {
-        pattern: "cry1",
+        pattern: "cry11",
         desc: "Send a cry reaction GIF.",
         category: "fun",
         react: "😢",
@@ -160,7 +110,7 @@ cmd(
 // ═══════════════════════════════════════════════════════════
 cmd(
     {
-        pattern: "cuddle1",
+        pattern: "cuddle",
         desc: "Send a cuddle reaction GIF.",
         category: "fun",
         react: "🤗",
