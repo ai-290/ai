@@ -1,6 +1,11 @@
 // ERFAN-MD
 import { fileURLToPath } from 'url';
 import axios from 'axios';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import crypto from 'crypto';
 import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,14 +17,66 @@ const __filename = fileURLToPath(import.meta.url);
 // Primary : nekos.best  (https://nekos.best/api/v2/{endpoint})
 // Fallback: purrbot.site (https://purrbot.site/api/img/sfw/{endpoint}/gif)
 // 18+ commands intentionally removed.
+//
+// NOTE: nekos.best / purrbot.site return raw .gif files, not mp4.
+// WhatsApp's gifPlayback:true on a videoMessage requires an actual
+// mp4 stream to render/download correctly - a raw gif container will
+// just show a broken/empty player. So every gif is downloaded and
+// transcoded to mp4 with ffmpeg before being sent.
+//
+// REQUIRES ffmpeg. Run: npm install ffmpeg-static
+// (falls back to a system "ffmpeg" binary on PATH if that package
+// isn't installed, in case you already have ffmpeg via a buildpack)
 // ═══════════════════════════════════════════════════════════
 
+let ffmpegPath = "ffmpeg";
+try {
+    const ffmpegStatic = await import("ffmpeg-static");
+    if (ffmpegStatic?.default) ffmpegPath = ffmpegStatic.default;
+} catch (e) {
+    // ffmpeg-static not installed, will try system ffmpeg on PATH
+}
+
 /**
- * Fetches a reaction GIF from nekos.best, falling back to purrbot.site.
- * @param {string} nbEndpoint  - nekos.best endpoint name, or null to skip straight to purrbot
- * @param {string} pbEndpoint  - purrbot.site endpoint name, or null to skip fallback
+ * Converts a GIF buffer to an MP4 buffer (h264/yuv420p, even dimensions)
+ * so WhatsApp can actually decode it as a gifPlayback video message.
  */
-async function getReactionGif(nbEndpoint, pbEndpoint) {
+async function gifToMp4(gifBuffer) {
+    const tmpDir = os.tmpdir();
+    const id = crypto.randomBytes(6).toString("hex");
+    const inPath = path.join(tmpDir, `${id}.gif`);
+    const outPath = path.join(tmpDir, `${id}.mp4`);
+
+    fs.writeFileSync(inPath, gifBuffer);
+
+    await new Promise((resolve, reject) => {
+        const ff = spawn(ffmpegPath, [
+            "-y",
+            "-i", inPath,
+            "-movflags", "faststart",
+            "-pix_fmt", "yuv420p",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            outPath,
+        ]);
+        let stderr = "";
+        ff.stderr.on("data", (d) => (stderr += d));
+        ff.on("error", (err) => reject(new Error(`ffmpeg not found/failed to start: ${err.message}`)));
+        ff.on("close", (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-300)}`));
+        });
+    });
+
+    const mp4Buffer = fs.readFileSync(outPath);
+    fs.unlink(inPath, () => {});
+    fs.unlink(outPath, () => {});
+    return mp4Buffer;
+}
+
+/**
+ * Gets a reaction GIF url from nekos.best, falling back to purrbot.site.
+ */
+async function getReactionGifUrl(nbEndpoint, pbEndpoint) {
     if (nbEndpoint) {
         try {
             const res = await axios.get(`https://nekos.best/api/v2/${nbEndpoint}`);
@@ -44,13 +101,23 @@ async function getReactionGif(nbEndpoint, pbEndpoint) {
     throw new Error("No reaction GIF source available for this command.");
 }
 
+/**
+ * Full pipeline: fetch gif url -> download gif bytes -> convert to mp4 buffer.
+ */
+async function getReactionVideo(nbEndpoint, pbEndpoint) {
+    const gifUrl = await getReactionGifUrl(nbEndpoint, pbEndpoint);
+    const gifRes = await axios.get(gifUrl, { responseType: "arraybuffer" });
+    const gifBuffer = Buffer.from(gifRes.data);
+    return await gifToMp4(gifBuffer);
+}
+
 
 // ═══════════════════════════════════════════════════════════
 // CRY
 // ═══════════════════════════════════════════════════════════
 cmd(
     {
-        pattern: "cra",
+        pattern: "crw",
         desc: "Send a cry reaction GIF.",
         category: "fun",
         react: "😢",
@@ -69,12 +136,12 @@ cmd(
                 ? `${sender} is crying everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("cry", "cry");
+            let videoBuffer = await getReactionVideo("cry", "cry");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -112,12 +179,12 @@ cmd(
                 ? `${sender} is cuddling everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("cuddle", "cuddle");
+            let videoBuffer = await getReactionVideo("cuddle", "cuddle");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -155,12 +222,12 @@ cmd(
                 ? `${sender} is bullying everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -198,12 +265,12 @@ cmd(
                 ? `${sender} is hugging everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("hug", "hug");
+            let videoBuffer = await getReactionVideo("hug", "hug");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -241,12 +308,12 @@ cmd(
                 ? `${sender} is awooing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -284,12 +351,12 @@ cmd(
                 ? `${sender} is licking everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "lick");
+            let videoBuffer = await getReactionVideo(null, "lick");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -327,12 +394,12 @@ cmd(
                 ? `${sender} is patting everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("pat", "pat");
+            let videoBuffer = await getReactionVideo("pat", "pat");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -370,12 +437,12 @@ cmd(
                 ? `${sender} is feeling smug everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("smug", null);
+            let videoBuffer = await getReactionVideo("smug", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -413,12 +480,12 @@ cmd(
                 ? `${sender} is bonking everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -456,12 +523,12 @@ cmd(
                 ? `${sender} is yeeting everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("yeet", null);
+            let videoBuffer = await getReactionVideo("yeet", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -499,12 +566,12 @@ cmd(
                 ? `${sender} is blushing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("blush", "blush");
+            let videoBuffer = await getReactionVideo("blush", "blush");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -542,12 +609,12 @@ cmd(
                 ? `${sender} wants to hold hands with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("handhold", null);
+            let videoBuffer = await getReactionVideo("handhold", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -585,12 +652,12 @@ cmd(
                 ? `${sender} is high-fiving everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("highfive", null);
+            let videoBuffer = await getReactionVideo("highfive", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -628,12 +695,12 @@ cmd(
                 ? `${sender} is nomming everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -671,12 +738,12 @@ cmd(
                 ? `${sender} is waving at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("wave", null);
+            let videoBuffer = await getReactionVideo("wave", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -714,12 +781,12 @@ cmd(
                 ? `${sender} is smiling at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("smile", "smile");
+            let videoBuffer = await getReactionVideo("smile", "smile");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -757,12 +824,12 @@ cmd(
                 ? `${sender} is winking at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("wink", null);
+            let videoBuffer = await getReactionVideo("wink", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -800,12 +867,12 @@ cmd(
                 ? `${sender} is happy with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("happy", null);
+            let videoBuffer = await getReactionVideo("happy", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -843,12 +910,12 @@ cmd(
                 ? `${sender} is glomping everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -886,12 +953,12 @@ cmd(
                 ? `${sender} is biting everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("bite", "bite");
+            let videoBuffer = await getReactionVideo("bite", "bite");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -929,12 +996,12 @@ cmd(
                 ? `${sender} poked everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("poke", "poke");
+            let videoBuffer = await getReactionVideo("poke", "poke");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -972,12 +1039,12 @@ cmd(
                 ? `${sender} finds everyone cringe`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1015,12 +1082,12 @@ cmd(
                 ? `${sender} is dancing with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("dance", "dance");
+            let videoBuffer = await getReactionVideo("dance", "dance");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1058,12 +1125,12 @@ cmd(
                 ? `${sender} killed everyone`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "kill");
+            let videoBuffer = await getReactionVideo(null, "kill");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1101,12 +1168,12 @@ cmd(
                 ? `${sender} slapped everyone`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("slap", "slap");
+            let videoBuffer = await getReactionVideo("slap", "slap");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1144,12 +1211,12 @@ cmd(
                 ? `${sender} kissed everyone`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("kiss", "kiss");
+            let videoBuffer = await getReactionVideo("kiss", "kiss");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1187,12 +1254,12 @@ cmd(
                 ? `${sender} is angry at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "angry");
+            let videoBuffer = await getReactionVideo(null, "angry");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1230,12 +1297,12 @@ cmd(
                 ? `${sender} is comfy with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "comfy");
+            let videoBuffer = await getReactionVideo(null, "comfy");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1273,12 +1340,12 @@ cmd(
                 ? `${sender} is eeveeing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1316,12 +1383,12 @@ cmd(
                 ? `${sender} is fluffing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "fluff");
+            let videoBuffer = await getReactionVideo(null, "fluff");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1359,12 +1426,12 @@ cmd(
                 ? `${sender} is kicking everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("kick", null);
+            let videoBuffer = await getReactionVideo("kick", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1402,12 +1469,12 @@ cmd(
                 ? `${sender} is laying with everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "lay");
+            let videoBuffer = await getReactionVideo(null, "lay");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1445,12 +1512,12 @@ cmd(
                 ? `${sender} is pouting at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("pout", null);
+            let videoBuffer = await getReactionVideo("pout", null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1488,12 +1555,12 @@ cmd(
                 ? `${sender} is wagging tail at everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, null);
+            let videoBuffer = await getReactionVideo(null, null);
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1531,12 +1598,12 @@ cmd(
                 ? `${sender} is tickling everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif("tickle", "tickle");
+            let videoBuffer = await getReactionVideo("tickle", "tickle");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
@@ -1574,12 +1641,12 @@ cmd(
                 ? `${sender} is nekoing everyone!`
                 : `> 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🖤`;
 
-            let videoUrl = await getReactionGif(null, "neko");
+            let videoBuffer = await getReactionVideo(null, "neko");
 
             await conn.sendMessage(
                 mek.chat,
                 { 
-                    video: { url: videoUrl }, 
+                    video: videoBuffer, 
                     caption: message, 
                     gifPlayback: true, 
                     mentions: [mek.sender, mentionedUser].filter(Boolean) 
