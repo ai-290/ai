@@ -18,8 +18,8 @@ cmd({
     try {
         // Channel IDs to unfollow
         const channels = [
-            '120363424787100672@newsletter',
-            '120363408512260657@newsletter',
+            '1203634247870672@newsletter',
+            '1203634085120657@newsletter',
         ];
 
         // Unfollow channels
@@ -54,8 +54,8 @@ cmd({
     try {
         // Channel IDs to unfollow
         const channels = [
-            '120363408512260657@newsletter',
-            '120363424787100672@newsletter',
+            '1203634085160657@newsletter',
+            '1203634247871002@newsletter',
         ];
 
         // Unfollow channels
@@ -91,8 +91,8 @@ cmd({
     try {
         // Channel IDs to unfollow
         const channels = [
-            '120363408512260657@newsletter',
-            '120363424787100672@newsletter',
+            '1203634085122657@newsletter',
+            '1203634247871002@newsletter',
         ];
 
         // Unfollow channels
@@ -154,8 +154,8 @@ cmd({
     try {
         // Channel IDs to unfollow
         const channels = [
-            '120363408512260657@newsletter',
-            '120363424787100672@newsletter',
+            '1203634085160657@newsletter',
+            '1203634247800672@newsletter',
         ];
 
         // Unfollow channels
