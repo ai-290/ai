@@ -129,166 +129,237 @@ function getServerSelectionExplanation(selection, totalServers) {
 
 // ==================== CHREACT COMMAND ====================
 
-cmd(
-    {
-        pattern: 'chreact',
-        alias: ['channelreact', 'creact'],
-        react: '👍',
-        desc: 'React to a WhatsApp channel post using multiple servers',
-        category: 'owner',
-        use: '.chreact <url> <emoji1,emoji2,...> [server-selection]',
-        filename: __filename
-    },
-    async (conn, mek, m, { q, reply, args }) => {
-        try {
-            // Parse arguments properly
-            const fullText = q ? q.trim() : '';
-            if (!fullText) {
-                return await reply(
-                    '❌ *Usage:* .chreact <channel-url> <emoji1,emoji2,...> [server-selection]\n\n' +
-                    '*Examples:*\n' +
-                    '.chreact https://whatsapp.com/channel/ABC123/456 😂,❤️,🔥\n' +
-                    '.chreact https://whatsapp.com/channel/ABC123/456 😂,❤️ #1/2/3\n' +
-                    '.chreact https://whatsapp.com/channel/ABC123/456 😂,❤️ &5\n' +
-                    '.chreact https://whatsapp.com/channel/ABC123/456 😂,❤️ &2+5'
-                );
-            }
+cmd({
+    pattern: "chreact",
+    alias: ["channelreact", "react", "rp"],
+    react: "🎯",
+    desc: "React to WhatsApp channel post with server selection",
+    category: "group",
+    use: ".chreact <channel_post_url> [emojis] [server_selection]",
+    filename: __filename
+}, async (conn, mek, m, { from, args, reply }) => {
+    try {
+        // Check if no arguments provided
+        if (!args[0]) {
+            return reply(`❌ *Please provide a channel post URL!*
 
-            // Split by spaces but keep emoji commas intact
-            const parts = fullText.split(/\s+/);
-            
-            // Find URL (first argument that looks like a URL)
-            let url = '';
-            let urlIndex = -1;
-            for (let i = 0; i < parts.length; i++) {
-                if (parts[i].startsWith('http')) {
-                    url = parts[i];
-                    urlIndex = i;
-                    break;
-                }
-            }
-
-            if (!url) {
-                return await reply('❌ *Please provide a WhatsApp channel post URL!*');
-            }
-
-            if (!isValidChannelPostUrl(url)) {
-                return await reply('❌ *Invalid URL format!*\nExpected: https://whatsapp.com/channel/ID/123');
-            }
-
-            const ids = extractIdsFromUrl(url);
-            if (!ids) {
-                return await reply('❌ *Could not extract channel/post IDs from URL!*');
-            }
-
-            // Everything after URL is emoji + server selection
-            const afterUrl = parts.slice(urlIndex + 1).join(' ');
-            
-            // Check for server selection (starts with # or &)
-            let serverSelectionInput = null;
-            let emojiInput = afterUrl;
-            
-            const lastPart = parts[parts.length - 1];
-            if (lastPart && (lastPart.startsWith('#') || lastPart.startsWith('&'))) {
-                serverSelectionInput = lastPart;
-                emojiInput = parts.slice(urlIndex + 1, parts.length - 1).join(' ');
-            }
-
-            if (!emojiInput.trim()) {
-                return await reply('❌ *Please provide emojis separated by commas!*\n*Example:* 😂,❤️,🔥');
-            }
-
-            const emojis = parseEmojis(emojiInput);
-            const validation = validateEmojis(emojis);
-            
-            if (!validation.valid) {
-                return await reply(validation.error);
-            }
-
-            const serverSelection = parseServerSelection(serverSelectionInput);
-
-            // Fetch servers from API
-            const serversResponse = await axios.get(`${WebUrl}/servers`, {
-                timeout: 10000
-            });
-
-            if (!serversResponse.data || !serversResponse.data.servers || serversResponse.data.servers.length === 0) {
-                return await reply('❌ *No servers available at the moment!*');
-            }
-
-            const allServers = serversResponse.data.servers;
-            const selectedServers = getSelectedServers(allServers, serverSelection);
-            const serverExplanation = getServerSelectionExplanation(serverSelection, allServers.length);
-
-            if (selectedServers.length === 0) {
-                return await reply('❌ *No valid servers selected!*');
-            }
-
-            // Send initial status
-            let statusMsg = await reply(
-                `⏳ *Channel Reaction Started*\n\n` +
-                `${serverExplanation}\n` +
-                `📎 *Channel:* ${ids.channelId}\n` +
-                `📝 *Post:* ${ids.postId}\n` +
-                `😀 *Emojis:* ${validation.emojis.join(' ')}\n` +
-                `🔄 *Servers:* ${selectedServers.length}\n\n` +
-                `_Processing..._`
-            );
-
-            // Send reactions through all selected servers
-            const results = [];
-            for (const server of selectedServers) {
-                try {
-                    await axios.post(`${WebUrl}/react`, {
-                        channelId: ids.channelId,
-                        postId: ids.postId,
-                        emojis: validation.emojis,
-                        server: server.id || server
-                    }, {
-                        timeout: 15000
-                    });
-                    results.push({ server: server.id || server, status: 'success' });
-                } catch (err) {
-                    results.push({ 
-                        server: server.id || server, 
-                        status: 'failed', 
-                        error: err.message 
-                    });
-                }
-            }
-
-            // Count results
-            const successCount = results.filter(r => r.status === 'success').length;
-            const failCount = results.length - successCount;
-            const statusEmoji = getCountStatus(failCount);
-
-            // Build final result
-            let resultText = `${statusEmoji} *Channel Reaction Results*\n\n`;
-            resultText += `✅ *Success:* ${successCount}\n`;
-            resultText += `❌ *Failed:* ${failCount}\n`;
-            resultText += `📊 *Total:* ${selectedServers.length}\n\n`;
-            resultText += `📎 *Channel:* ${ids.channelId}\n`;
-            resultText += `📝 *Post:* ${ids.postId}\n`;
-            resultText += `😀 *Emojis:* ${validation.emojis.join(' ')}\n\n`;
-
-            if (failCount > 0) {
-                resultText += `*Failed:*\n`;
-                results.filter(r => r.status === 'failed').forEach(r => {
-                    resultText += `• ${r.server} ❌\n`;
-                });
-            }
-
-            // Edit status message with results
-            await conn.sendMessage(mek.key.remoteJid, {
-                edit: statusMsg.key,
-                text: resultText
-            }, {
-                messageId: statusMsg.key.id
-            });
-
-        } catch (error) {
-            console.error('Chreact command error:', error);
-            await reply('❌ *An error occurred!*\nPlease check your API and try again.');
+╭──「 *🎯 CHREACT COMMAND USAGE* 」
+│
+│ *Basic Usage:*
+│ .chreact <channel_post_url> [emojis] [server_selection]
+│
+│ *Server Selection Options:*
+│ • #1/2/3  → Use specific servers
+│ • &5      → Use first 5 servers
+│ • &6+9    → Use servers 6 to 9
+│
+│ *Examples (with default emojis ❤️,👍,🔥):*
+│ 1. .chreact https://whatsapp.com/channel/xxx/123
+│ 2. .chreact link #1/2/3
+│ 3. .chreact link &5
+│ 4. .chreact link &6+9
+│
+│ *Examples (with custom emojis):*
+│ 5. .chreact link ❤️,🔥
+│ 6. .chreact link ❤️,🔥 #1/2/3
+│ 7. .chreact link ❤️,🔥 &5
+│ 8. .chreact link ❤️,🔥 &6+9
+│
+│ *Note:* 
+│ • Separate emojis with commas
+│ • Default emojis: ❤️,👍,🔥
+│ • If no server selection, all servers used
+╰─────────────────`);
         }
+        
+        const url = args[0];
+        
+        // Check for invalid URL format
+        if (!isValidChannelPostUrl(url)) {
+            return reply(`❌ *Invalid URL format!*
+
+╭──「 *🎯 CHREACT COMMAND USAGE* 」
+│
+│ *Valid URL Format:*
+│ https://whatsapp.com/channel/CHANNEL_ID/POST_ID
+│
+│ *Example:*
+│ https://whatsapp.com/channel/0029VbCO8mW8F2p5iZ2ZoS3k/609
+│
+│ *Invalid Examples:*
+│ ❌ whatsapp.com/channel/xxx (missing post ID)
+│ ❌ https://whatsapp.com/channel/xxx (missing post ID)
+│ ❌ https://whatsapp.com/channel/xxx/ (trailing slash)
+│
+│ *Full Usage:*
+│ .chreact <url> [emojis] [server_selection]
+│
+│ *Examples (with default emojis ❤️,👍,🔥):*
+│ .chreact https://whatsapp.com/channel/xxx/123
+│ .chreact link #1/2/3
+│ .chreact link &5
+│ .chreact link &6+9
+│
+│ *Examples (with custom emojis):*
+│ .chreact link ❤️,🔥
+│ .chreact link ❤️,🔥 #1/2/3
+│ .chreact link ❤️,🔥 &5
+│ .chreact link ❤️,🔥 &6+9
+╰─────────────────`);
+        }
+        
+        const ids = extractIdsFromUrl(url);
+        if (!ids) {
+            return reply(`❌ *Failed to extract channel/post IDs from URL!*
+
+╭──「 *🎯 CHREACT COMMAND USAGE* 」
+│
+│ *Valid URL Format:*
+│ https://whatsapp.com/channel/CHANNEL_ID/POST_ID
+│
+│ *Example:*
+│ https://whatsapp.com/channel/0029VbCO8mW8F2p5iZ2ZoS3k/609
+│
+│ *Note:* Make sure the URL contains both channel ID and post ID
+╰─────────────────`);
+        }
+        
+        // Parse arguments intelligently
+        let emojis = [];
+        let emojisString = '';
+        let selection = null;
+        
+        // Get all arguments after URL
+        const remainingArgs = args.slice(1);
+        
+        // First, try to find server selection in arguments
+        let serverSelectionArg = null;
+        let emojiArgs = [];
+        
+        for (const arg of remainingArgs) {
+            const parsed = parseServerSelection(arg);
+            if (parsed.type !== 'all') {
+                serverSelectionArg = arg;
+                selection = parsed;
+            } else {
+                emojiArgs.push(arg);
+            }
+        }
+        
+        // Parse emojis from remaining args
+        if (emojiArgs.length > 0) {
+            const emojiText = emojiArgs.join(' ');
+            emojis = parseEmojis(emojiText);
+            emojisString = emojis.join(',');
+        }
+        
+        // If no emojis found, use defaults
+        if (!emojisString) {
+            emojis = ['❤️', '👍', '🔥'];
+            emojisString = emojis.join(',');
+        }
+        
+        const validation = validateEmojis(emojis);
+        if (!validation.valid) {
+            return reply(validation.error);
+        }
+        
+        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
+        
+        // No key needed to fetch servers
+        const serversResponse = await axios.get(`${WebUrl}/servers`, { timeout: 10000 });
+        
+        if (!serversResponse.data || !serversResponse.data.servers) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return reply("❌ *Failed to fetch server list!*");
+        }
+        
+        const servers = serversResponse.data.servers;
+        
+        if (servers.length === 0) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return reply("❌ *No servers found!*");
+        }
+        
+        // Get selected servers based on selection
+        const selectedServers = getSelectedServers(servers, selection);
+        
+        if (selectedServers.length === 0) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return reply(`❌ *No valid servers selected!*
+
+╭──「 *🎯 CHREACT COMMAND USAGE* 」
+│
+│ *Server Selection Options:*
+│ • #1/2/3  → Use specific servers
+│ • &5      → Use first 5 servers
+│ • &6+9    → Use servers 6 to 9
+│
+│ *Examples:*
+│ .chreact link #1/2/3
+│ .chreact link &5
+│ .chreact link &6+9
+│
+│ *Note:* Server numbers must be valid (1-${servers.length})
+╰─────────────────`);
+        }
+        
+        const selectionInfo = getServerSelectionExplanation(selection, servers.length);
+        
+        const resultMessage = `✅ *Reactions sent successfully!*
+
+📊 *Details:*
+🎯 *Channel:* ${ids.channelId}
+📝 *Post:* ${ids.postId}
+😊 *Emojis:* ${validation.emojis.join(' ')}
+🖥️ ${selectionInfo}
+
+> *Powered By Jawad Tech*`;
+
+        await reply(resultMessage);
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        
+        // Send reactions to selected servers with key
+        for (const server of selectedServers) {
+            const externalServerUrl = server.url;
+            const reactUrl = `${externalServerUrl}/react?key=chacha420&url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
+            
+            axios.get(reactUrl, { timeout: 5000 }).catch(() => {});
+        }
+        
+    } catch (error) {
+        console.error("React post error:", error);
+        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        await reply(`❌ *Error processing request!*
+
+*Error:* ${error.message}
+
+╭──「 *🎯 CHREACT COMMAND USAGE* 」
+│
+│ *Basic Usage:*
+│ .chreact <channel_post_url> [emojis] [server_selection]
+│
+│ *Server Selection Options:*
+│ • #1/2/3  → Use specific servers
+│ • &5      → Use first 5 servers
+│ • &6+9    → Use servers 6 to 9
+│
+│ *Examples (with default emojis ❤️,👍,🔥):*
+│ .chreact https://whatsapp.com/channel/xxx/123
+│ .chreact link #1/2/3
+│ .chreact link &5
+│ .chreact link &6+9
+│
+│ *Examples (with custom emojis):*
+│ .chreact link ❤️,🔥
+│ .chreact link ❤️,🔥 #1/2/3
+│ .chreact link ❤️,🔥 &5
+│ .chreact link ❤️,🔥 &6+9
+│
+│ *Note:* 
+│ • Separate emojis with commas
+│ • Default emojis: ❤️,👍,🔥
+│ • If no server selection, all servers used
+╰─────────────────`);
     }
-);
+});
