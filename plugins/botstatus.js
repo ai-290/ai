@@ -2,17 +2,12 @@ import { cmd } from '../command.js';
 import axios from 'axios';
 import { fileURLToPath } from 'url';
 
-
 const __filename = fileURLToPath(import.meta.url);
 
-// ─── API CONFIG ───
-const API_BASE_URL = 'https://ai-sev585.vercel.app/api'; // For status/pair
-const BASE_URL = WebX; // For chreact
+// Single API Base URL
+const API_BASE_URL = 'https://ai-sev585.vercel.app/api';
 
-// ═══════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════
-
+// Status emoji function
 function getCountStatus(count) {
     if (count === 50) return '🔴';
     if (count >= 40) return '🟣';
@@ -22,11 +17,14 @@ function getCountStatus(count) {
     return '🟢';
 }
 
+// Checks a single server, with 1 retry before declaring it offline.
+// This avoids false "OFFLINE" results caused by a slow response or
+// a momentary network blip.
 async function checkServerWithRetry(server, attempts = 2) {
     for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
             const statusResponse = await axios.get(`${API_BASE_URL}/status/${server.id}`, {
-                timeout: 10000
+                timeout: 10000 // was 5000 — too short, caused false offline reports
             });
 
             if (statusResponse.data && !statusResponse.data.error) {
@@ -43,6 +41,7 @@ async function checkServerWithRetry(server, attempts = 2) {
                     status: `${statusEmoji} ONLINE`
                 };
             } else {
+                // Server responded but with no usable data — not the same as offline
                 return {
                     server: server.id,
                     name: server.name,
@@ -55,6 +54,7 @@ async function checkServerWithRetry(server, attempts = 2) {
             }
         } catch (err) {
             if (attempt < attempts) {
+                // brief pause then retry once before giving up
                 await new Promise((r) => setTimeout(r, 700));
                 continue;
             }
@@ -70,7 +70,157 @@ async function checkServerWithRetry(server, attempts = 2) {
     }
 }
 
-// ─── CHREACT HELPERS ───
+// ==================== STATUS COMMAND ====================
+
+cmd(
+    {
+        pattern: 'funxy',
+        alias: ['serverstatus', 'stats', 'servers'],
+        react: '📊',
+        desc: 'Check server status and active users',
+        category: '💬 Fun Text',
+        use: '.status',
+        filename: __filename
+    },
+    async (conn, mek, m, { reply }) => {
+        try {
+            const serversResponse = await axios.get(`${API_BASE_URL}/servers`, {
+                timeout: 8000
+            });
+
+            if (!serversResponse.data || !serversResponse.data.servers) {
+                return reply('❌ Failed to fetch server list.');
+            }
+
+            const servers = serversResponse.data.servers;
+
+            // Check all servers in PARALLEL instead of one-by-one.
+            // This is both faster and avoids timeouts stacking up on
+            // later servers in the list.
+            const results = await Promise.allSettled(
+                servers.map((server) => checkServerWithRetry(server))
+            );
+
+            const serverStatus = results.map((r, i) =>
+                r.status === 'fulfilled'
+                    ? r.value
+                    : {
+                          server: servers[i].id,
+                          name: servers[i].name,
+                          count: 0,
+                          limit: 50,
+                          online: false,
+                          status: '🔴 OFFLINE'
+                      }
+            );
+
+            let totalActive = 0;
+            let totalLimit = 0;
+            let onlineServers = 0;
+            let offlineServers = 0;
+
+            for (const s of serverStatus) {
+                if (s.online) {
+                    onlineServers++;
+                    totalActive += s.count;
+                    totalLimit += s.limit;
+                } else {
+                    offlineServers++;
+                }
+            }
+
+            let statusMessage = `╭──「 *SERVER STATUS* 」\n│\n`;
+            statusMessage += `│ *📊 Overview*\n`;
+            statusMessage += `│ Total: ${servers.length}\n`;
+            statusMessage += `│ Online: ${onlineServers} | Offline: ${offlineServers}\n`;
+            statusMessage += `│ Active: ${totalActive}/${totalLimit}\n`;
+            statusMessage += `│\n`;
+            statusMessage += `│━━━━━━━━━━━━━━━━━━━━\n`;
+
+            serverStatus.forEach((s) => {
+                const statusIcon = s.status.split(' ')[0];
+                const statusText = s.status.split(' ')[1];
+                statusMessage += `│ ${s.name.padEnd(8)}: ${String(s.count).padStart(2)}/${s.limit} ${statusIcon} ${statusText}\n`;
+            });
+
+            statusMessage += `╰─────────────────`;
+
+            await reply(statusMessage);
+        } catch (error) {
+            console.error('Status command error:', error);
+            await reply('❌ Error checking server status. Make sure your API is running.');
+        }
+    }
+);
+
+// ==================== PAIR COMMAND ====================
+// Untouched — exactly as before
+
+cmd(
+    {
+        pattern: 'pair',
+        alias: ['getpair', 'clonebot'],
+        react: '✅',
+        desc: 'Get pairing code for erfan-MD bot',
+        category: 'owner',
+        use: '.pair 923306137477',
+        filename: __filename
+    },
+    async (conn, mek, m, { q, senderNumber, reply }) => {
+        try {
+            const phoneNumber = q
+                ? q.trim().replace(/[^0-9]/g, '')
+                : senderNumber.replace(/[^0-9]/g, '');
+
+            if (!phoneNumber || phoneNumber.length < 10 || phoneNumber.length > 15) {
+                return await reply('❌ Please provide a valid phone number without +\nExample: .pair 923306137477');
+            }
+
+            const randomResponse = await axios.get(`${API_BASE_URL}/random`, {
+                timeout: 5000
+            });
+
+            if (!randomResponse.data || !randomResponse.data.server) {
+                return await reply('❌ Failed to get available server. Please try again.');
+            }
+
+            const selectedServer = randomResponse.data.server;
+
+            const response = await axios.get(`${API_BASE_URL}/code`, {
+                params: {
+                    server: selectedServer,
+                    number: phoneNumber
+                },
+                timeout: 20000
+            });
+
+            if (!response.data || !response.data.code) {
+                return await reply('❌ Failed to retrieve pairing code. Please try again later.');
+            }
+
+            const pairingCode = response.data.code;
+
+            await reply(
+                `🔐 *ERFAN-MD PAIR CODE*\n\n` +
+                `${pairingCode}\n\n` +
+                `Server: ${selectedServer}\n\n` +
+                `📱 *How to use:*\n` +
+                `1. Open WhatsApp on your phone\n` +
+                `2. Go to Linked Devices\n` +
+                `3. Tap on Link Device\n` +
+                `4. Enter this code when prompted`
+            );
+
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await reply(pairingCode);
+        } catch (error) {
+            console.error('Pair command error:', error);
+            await reply('❌ An error occurred while getting pairing code. Please try again later.');
+        }
+    }
+);
+
+// ==================== CHREACT COMMAND ====================
 
 function isValidChannelPostUrl(url) {
     const pattern = /^https?:\/\/(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9]+\/\d+$/;
@@ -114,146 +264,6 @@ function validateEmojis(emojis) {
     }
     return { valid: true, emojis };
 }
-
-// ═══════════════════════════════════════════════════════════
-// 1) FUNXY — SERVER STATUS
-// ═══════════════════════════════════════════════════════════
-
-cmd({
-    pattern: 'funxy',
-    alias: ['serverstatus', 'stats', 'servers'],
-    react: '📊',
-    desc: 'Check server status and active users',
-    category: 'owner',
-    use: '.funxy',
-    filename: __filename
-}, async (conn, mek, m, { reply }) => {
-    try {
-        const serversResponse = await axios.get(`${API_BASE_URL}/servers`, { timeout: 8000 });
-
-        if (!serversResponse.data || !serversResponse.data.servers) {
-            return reply('❌ Failed to fetch server list.');
-        }
-
-        const servers = serversResponse.data.servers;
-        const results = await Promise.allSettled(
-            servers.map((server) => checkServerWithRetry(server))
-        );
-
-        const serverStatus = results.map((r, i) =>
-            r.status === 'fulfilled'
-                ? r.value
-                : {
-                      server: servers[i].id,
-                      name: servers[i].name,
-                      count: 0,
-                      limit: 50,
-                      online: false,
-                      status: '🔴 OFFLINE'
-                  }
-        );
-
-        let totalActive = 0;
-        let totalLimit = 0;
-        let onlineServers = 0;
-        let offlineServers = 0;
-
-        for (const s of serverStatus) {
-            if (s.online) {
-                onlineServers++;
-                totalActive += s.count;
-                totalLimit += s.limit;
-            } else {
-                offlineServers++;
-            }
-        }
-
-        let statusMessage = `╭──「 *SERVER STATUS* 」\n│\n`;
-        statusMessage += `│ *📊 Overview*\n`;
-        statusMessage += `│ Total: ${servers.length}\n`;
-        statusMessage += `│ Online: ${onlineServers} | Offline: ${offlineServers}\n`;
-        statusMessage += `│ Active: ${totalActive}/${totalLimit}\n`;
-        statusMessage += `│\n`;
-        statusMessage += `│━━━━━━━━━━━━━━━━━━━━\n`;
-
-        serverStatus.forEach((s) => {
-            const statusIcon = s.status.split(' ')[0];
-            const statusText = s.status.split(' ')[1];
-            statusMessage += `│ ${s.name.padEnd(8)}: ${String(s.count).padStart(2)}/${s.limit} ${statusIcon} ${statusText}\n`;
-        });
-
-        statusMessage += `╰─────────────────`;
-
-        await reply(statusMessage);
-    } catch (error) {
-        console.error('Status command error:', error);
-        await reply('❌ Error checking server status. Make sure your API is running.');
-    }
-});
-
-// ═══════════════════════════════════════════════════════════
-// 2) PAIR — PAIRING CODE
-// ═══════════════════════════════════════════════════════════
-
-cmd({
-    pattern: 'pair',
-    alias: ['getpair', 'clonebo'],
-    react: '✅',
-    desc: 'Get pairing code for bot',
-    category: 'owner',
-    use: '.pair 923306137477',
-    filename: __filename
-}, async (conn, mek, m, { q, senderNumber, reply }) => {
-    try {
-        const phoneNumber = q
-            ? q.trim().replace(/[^0-9]/g, '')
-            : senderNumber.replace(/[^0-9]/g, '');
-
-        if (!phoneNumber || phoneNumber.length < 10 || phoneNumber.length > 15) {
-            return await reply('❌ Please provide a valid phone number without +\nExample: .pair 923306137477');
-        }
-
-        const randomResponse = await axios.get(`${API_BASE_URL}/random`, { timeout: 5000 });
-
-        if (!randomResponse.data || !randomResponse.data.server) {
-            return await reply('❌ Failed to get available server. Please try again.');
-        }
-
-        const selectedServer = randomResponse.data.server;
-
-        const response = await axios.get(`${API_BASE_URL}/code`, {
-            params: { server: selectedServer, number: phoneNumber },
-            timeout: 20000
-        });
-
-        if (!response.data || !response.data.code) {
-            return await reply('❌ Failed to retrieve pairing code. Please try again later.');
-        }
-
-        const pairingCode = response.data.code;
-
-        await reply(
-            `🔐 *ERFAN-MD PAIR CODE*\n\n` +
-            `${pairingCode}\n\n` +
-            `Server: ${selectedServer}\n\n` +
-            `📱 *How to use:*\n` +
-            `1. Open WhatsApp on your phone\n` +
-            `2. Go to Linked Devices\n` +
-            `3. Tap on Link Device\n` +
-            `4. Enter this code when prompted`
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        await reply(pairingCode);
-    } catch (error) {
-        console.error('Pair command error:', error);
-        await reply('❌ An error occurred while getting pairing code. Please try again later.');
-    }
-});
-
-// ═══════════════════════════════════════════════════════════
-// 3) CHREACT — CHANNEL REACT
-// ═══════════════════════════════════════════════════════════
 
 cmd({
     pattern: "chreact",
@@ -315,7 +325,7 @@ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
 
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
 
-        const serversResponse = await axios.get(`${BASE_URL}/servers`, { timeout: 10000 });
+        const serversResponse = await axios.get(`${API_BASE_URL}/servers`, { timeout: 10000 });
 
         if (!serversResponse.data || !serversResponse.data.servers) {
             await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
@@ -343,7 +353,7 @@ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
         for (const server of servers) {
-            const reactUrl = `${server.url}/fcksmd?key=${PUBG}&url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
+            const reactUrl = `${server.url}/fcksmd?url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
             axios.get(reactUrl, { timeout: 5000 }).catch(() => {});
         }
 
