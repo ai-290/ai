@@ -202,12 +202,18 @@ cmd({
 });
 
 // ==================== CHREACT ====================
+// Uses the bot's OWN /react route instead of external API
+// domain.com/react?link=POST_LINK&emojis=❤️,👍,🔥
 
 function isValidChannelPostUrl(url) {
-    return /^https?:\/\/(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9]+\/\d+$/.test(url);
+    // Support both formats:
+    // https://whatsapp.com/channel/ID/POST_ID
+    // https://whatsapp.com/channel/ID/POST_ID/EXTRA
+    return /^https?:\/\/(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9]+(?:\/\d+)+/.test(url);
 }
 
 function extractIdsFromUrl(url) {
+    // Extract channel ID and the FIRST numeric ID after it (the post ID)
     const match = url.match(/\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
     return match ? { channelId: match[1], postId: match[2] } : null;
 }
@@ -220,7 +226,7 @@ cmd({
     pattern: "chreact",
     alias: ["channelreact", "react", "rp"],
     react: "🎯",
-    desc: "React to WhatsApp channel post",
+    desc: "React to WhatsApp channel post using bot's react route",
     category: "owner",
     filename: __filename
 }, async (conn, mek, m, { from, args, reply }) => {
@@ -229,10 +235,10 @@ cmd({
             return reply(`❌ *Please provide a channel post URL!*
 
 *Example:* 
-.chreact https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
+.chreact https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J/100
 
 *With custom emojis:*
-.chreact https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J ❤️,👍,🔥
+.chreact https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J/100 ❤️,👍,🔥
 `);
         }
 
@@ -245,7 +251,7 @@ cmd({
 https://whatsapp.com/channel/CHANNEL_ID/POST_ID
 
 *Example:* 
-https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
+https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J/100
 `);
         }
 
@@ -269,41 +275,37 @@ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
         }
 
         if (emojis.length === 0) {
-            return reply('❌ *No valid emojis found!*\n*Example:* .chreact https://whatsapp.com/channel/ID/123 😂,❤️,🔥');
+            return reply('❌ *No valid emojis found!*\n*Example:* .chreact https://whatsapp.com/channel/ID/100 😂,❤️,🔥');
         }
 
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
 
-        const serversResponse = await axios.get(`${API_BASE_URL}/servers`, { timeout: 10000 });
+        // Call the bot's OWN /react route
+        const reactUrl = `${USER_DOMAIN}/react?link=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
 
-        if (!serversResponse.data || !serversResponse.data.servers) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-            return reply("❌ *Failed to fetch server list!*");
-        }
+        log(`[CHREACT] Calling react route: ${reactUrl}`, 'info');
 
-        const servers = serversResponse.data.servers;
+        const response = await axios.get(reactUrl, { timeout: 15000 });
 
-        if (servers.length === 0) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-            return reply("❌ *No servers found!*");
-        }
-
-        const resultMessage = `✅ *Reactions sent successfully!*
+        if (response.data && response.data.status === 'started') {
+            const resultMessage = `✅ *Reactions started successfully!*
 
 📊 *Details:*
 🎯 *Channel:* ${ids.channelId}
 📝 *Post:* ${ids.postId}
 😊 *Emojis:* ${emojis.join(' ')}
-🌐 *Servers:* ${servers.length}
+📱 *Active Sessions:* ${response.data.totalSessions || 'N/A'}
+
+> Reactions are being sent in background.
+> Check logs for progress.
 
 > *ERFAN-MD*`;
 
-        await reply(resultMessage);
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-
-        for (const server of servers) {
-            const reactUrl = `${server.url}/fcksmd?url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
-            axios.get(reactUrl, { timeout: 5000 }).catch(() => {});
+            await reply(resultMessage);
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        } else {
+            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
+            await reply(`⚠️ *React route returned unexpected response:*\n\n${JSON.stringify(response.data, null, 2)}`);
         }
 
     } catch (error) {
