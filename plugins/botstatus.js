@@ -8,15 +8,6 @@ const WebUrl = 'https://ai-sev585.vercel.app/api';
 
 // ==================== HELPER FUNCTIONS ====================
 
-function getCountStatus(count) {
-    if (count === 50) return '🔴';
-    if (count >= 40) return '🟣';
-    if (count >= 30) return '🟡';
-    if (count >= 20) return '🟠';
-    if (count >= 10) return '🔵';
-    return '🟢';
-}
-
 function isValidChannelPostUrl(url) {
     const pattern = /^https?:\/\/(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9]+\/\d+$/;
     return pattern.test(url);
@@ -233,13 +224,11 @@ cmd({
         const remainingArgs = args.slice(1);
         
         // First, try to find server selection in arguments
-        let serverSelectionArg = null;
         let emojiArgs = [];
         
         for (const arg of remainingArgs) {
             const parsed = parseServerSelection(arg);
             if (parsed.type !== 'all') {
-                serverSelectionArg = arg;
                 selection = parsed;
             } else {
                 emojiArgs.push(arg);
@@ -266,7 +255,7 @@ cmd({
         
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
         
-        // No key needed to fetch servers
+        // Fetch servers from main API
         const serversResponse = await axios.get(`${WebUrl}/servers`, { timeout: 10000 });
         
         if (!serversResponse.data || !serversResponse.data.servers) {
@@ -306,26 +295,62 @@ cmd({
         
         const selectionInfo = getServerSelectionExplanation(selection, servers.length);
         
-        const resultMessage = `✅ *Reactions sent successfully!*
-
-📊 *Details:*
-🎯 *Channel:* ${ids.channelId}
-📝 *Post:* ${ids.postId}
-😊 *Emojis:* ${validation.emojis.join(' ')}
-🖥️ ${selectionInfo}
-
-> *Powered By Jawad Tech*`;
-
-        await reply(resultMessage);
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        // Send reactions to selected servers and track results
+        const results = [];
         
-        // Send reactions to selected servers with key
         for (const server of selectedServers) {
-            const externalServerUrl = server.url;
-            const reactUrl = `${externalServerUrl}/react?key=chacha420&url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
-            
-            axios.get(reactUrl, { timeout: 5000 }).catch(() => {});
+            try {
+                // CORRECTED: Use 'link=' not 'url=', NO 'key=' parameter
+                const reactUrl = `${server.url}/react?link=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
+                
+                await axios.get(reactUrl, { timeout: 10000 });
+                
+                results.push({ server: server.name || server.id || server.url, status: 'success' });
+            } catch (err) {
+                results.push({ 
+                    server: server.name || server.id || server.url, 
+                    status: 'failed',
+                    error: err.message 
+                });
+            }
         }
+        
+        // Count successes and failures
+        const successCount = results.filter(r => r.status === 'success').length;
+        const failCount = results.length - successCount;
+        
+        // Build result message based on actual results
+        let resultMessage = '';
+        
+        if (successCount === 0) {
+            resultMessage = `❌ *All reactions failed!*\n\n`;
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        } else if (failCount === 0) {
+            resultMessage = `✅ *All reactions sent successfully!*\n\n`;
+            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        } else {
+            resultMessage = `⚠️ *Partial success!*\n\n`;
+            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
+        }
+        
+        resultMessage += `📊 *Details:*\n`;
+        resultMessage += `🎯 *Channel:* ${ids.channelId}\n`;
+        resultMessage += `📝 *Post:* ${ids.postId}\n`;
+        resultMessage += `😊 *Emojis:* ${validation.emojis.join(' ')}\n`;
+        resultMessage += `🖥️ ${selectionInfo}\n`;
+        resultMessage += `✅ *Success:* ${successCount}/${selectedServers.length}\n`;
+        
+        if (failCount > 0) {
+            resultMessage += `❌ *Failed:* ${failCount}\n\n`;
+            resultMessage += `*Failed Servers:*\n`;
+            results.filter(r => r.status === 'failed').forEach(r => {
+                resultMessage += `• ${r.server}\n`;
+            });
+        }
+        
+        resultMessage += `\n> *Powered By ERFAN*`;
+        
+        await reply(resultMessage);
         
     } catch (error) {
         console.error("React post error:", error);
