@@ -145,7 +145,7 @@ cmd({
 │ • &6+9    → Use servers 6 to 9
 │
 │ *Examples (with default emojis ❤️,👍,🔥):*
-│ 1. .chreact https://whatsapp.com/channel/xxx/123
+│ 1. .chreact https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J/7651
 │ 2. .chreact link #1/2/3
 │ 3. .chreact link &5
 │ 4. .chreact link &6+9
@@ -209,7 +209,7 @@ cmd({
 │ https://whatsapp.com/channel/CHANNEL_ID/POST_ID
 │
 │ *Example:*
-│ https://whatsapp.com/channel/0029VbCO8mW8F2p5iZ2ZoS3k/609
+│ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J/7651
 │
 │ *Note:* Make sure the URL contains both channel ID and post ID
 ╰─────────────────`);
@@ -300,55 +300,39 @@ cmd({
         
         for (const server of selectedServers) {
             try {
-                // CORRECTED: Use 'link=' not 'url=', NO 'key=' parameter
                 const reactUrl = `${server.url}/react?link=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
-                
                 await axios.get(reactUrl, { timeout: 10000 });
-                
                 results.push({ server: server.name || server.id || server.url, status: 'success' });
             } catch (err) {
                 results.push({ 
                     server: server.name || server.id || server.url, 
-                    status: 'failed',
-                    error: err.message 
+                    status: 'failed'
                 });
             }
         }
         
-        // Count successes and failures
+        // Count only successes — failures are hidden
         const successCount = results.filter(r => r.status === 'success').length;
-        const failCount = results.length - successCount;
         
-        // Build result message based on actual results
-        let resultMessage = '';
-        
+        // SILENT MODE: If zero success, say nothing and remove loading reaction
         if (successCount === 0) {
-            resultMessage = `❌ *All reactions failed!*\n\n`;
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
-        } else if (failCount === 0) {
-            resultMessage = `✅ *All reactions sent successfully!*\n\n`;
-            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-        } else {
-            resultMessage = `⚠️ *Partial success!*\n\n`;
-            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
+            await conn.sendMessage(from, { react: { text: '', key: m.key } });
+            return;
         }
         
-        resultMessage += `📊 *Details:*\n`;
-        resultMessage += `🎯 *Channel:* ${ids.channelId}\n`;
-        resultMessage += `📝 *Post:* ${ids.postId}\n`;
-        resultMessage += `😊 *Emojis:* ${validation.emojis.join(' ')}\n`;
-        resultMessage += `🖥️ ${selectionInfo}\n`;
-        resultMessage += `✅ *Success:* ${successCount}/${selectedServers.length}\n`;
+        // Only show success — no failure count, no failed server list, no "partial" warning
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
         
-        if (failCount > 0) {
-            resultMessage += `❌ *Failed:* ${failCount}\n\n`;
-            resultMessage += `*Failed Servers:*\n`;
-            results.filter(r => r.status === 'failed').forEach(r => {
-                resultMessage += `• ${r.server}\n`;
-            });
-        }
-        
-        resultMessage += `\n> *Powered By ERFAN*`;
+        const resultMessage = `✅ *Reactions sent successfully!*
+
+📊 *Details:*
+🎯 *Channel:* ${ids.channelId}
+📝 *Post:* ${ids.postId}
+😊 *Emojis:* ${validation.emojis.join(' ')}
+🖥️ ${selectionInfo}
+✅ *Success:* ${successCount}
+
+> *Powered By ERFAN*`;
         
         await reply(resultMessage);
         
