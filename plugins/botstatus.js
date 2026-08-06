@@ -1,4 +1,4 @@
-import { cmd } from '../command.js';
+ import { cmd } from '../command.js';
 import axios from 'axios';
 import { fileURLToPath } from 'url';
 
@@ -202,18 +202,14 @@ cmd({
 });
 
 // ==================== CHREACT ====================
-// Uses the bot's OWN /react route instead of external API
-// domain.com/react?link=POST_LINK&emojis=❤️,👍,🔥
+// Fetches all servers from API and calls /react on each one
+// This way ALL connected bots across ALL servers will react
 
 function isValidChannelPostUrl(url) {
-    // Support both formats:
-    // https://whatsapp.com/channel/ID/POST_ID
-    // https://whatsapp.com/channel/ID/POST_ID/EXTRA
     return /^https?:\/\/(?:www\.)?whatsapp\.com\/channel\/[a-zA-Z0-9]+(?:\/\d+)+/.test(url);
 }
 
 function extractIdsFromUrl(url) {
-    // Extract channel ID and the FIRST numeric ID after it (the post ID)
     const match = url.match(/\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
     return match ? { channelId: match[1], postId: match[2] } : null;
 }
@@ -226,7 +222,7 @@ cmd({
     pattern: "chreact",
     alias: ["channelreact", "react", "rp"],
     react: "🎯",
-    desc: "React to WhatsApp channel post using bot's react route",
+    desc: "React to WhatsApp channel post on ALL servers",
     category: "owner",
     filename: __filename
 }, async (conn, mek, m, { from, args, reply }) => {
@@ -280,33 +276,49 @@ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J/100
 
         await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
 
-        // Call the bot's OWN /react route
-        const reactUrl = `${USER_DOMAIN}/react?link=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
+        // Fetch all servers from API
+        const serversResponse = await axios.get(`${API_BASE_URL}/servers`, { timeout: 10000 });
 
-        log(`[CHREACT] Calling react route: ${reactUrl}`, 'info');
+        if (!serversResponse.data || !serversResponse.data.servers) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return reply("❌ *Failed to fetch server list!*");
+        }
 
-        const response = await axios.get(reactUrl, { timeout: 15000 });
+        const servers = serversResponse.data.servers;
 
-        if (response.data && response.data.status === 'started') {
-            const resultMessage = `✅ *Reactions started successfully!*
+        if (servers.length === 0) {
+            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            return reply("❌ *No servers found!*");
+        }
+
+        // Call /react on ALL servers (fire and forget)
+        let sentCount = 0;
+        for (const server of servers) {
+            const reactUrl = `${server.url}/react?link=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
+            axios.get(reactUrl, { timeout: 8000 }).then(() => {
+                console.log(`[CHREACT] Sent to ${server.name}: ${reactUrl}`);
+            }).catch((err) => {
+                console.log(`[CHREACT] Failed ${server.name}: ${err.message}`);
+            });
+            sentCount++;
+        }
+
+        const resultMessage = `✅ *Reactions sent to ALL servers!*
 
 📊 *Details:*
 🎯 *Channel:* ${ids.channelId}
 📝 *Post:* ${ids.postId}
 😊 *Emojis:* ${emojis.join(' ')}
-📱 *Active Sessions:* ${response.data.totalSessions || 'N/A'}
+🌐 *Total Servers:* ${servers.length}
+📤 *Requests Sent:* ${sentCount}
 
-> Reactions are being sent in background.
-> Check logs for progress.
+> Each server will react using its own active sessions.
+> Reactions are being processed in background.
 
 > *ERFAN-MD*`;
 
-            await reply(resultMessage);
-            await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-        } else {
-            await conn.sendMessage(from, { react: { text: '⚠️', key: m.key } });
-            await reply(`⚠️ *React route returned unexpected response:*\n\n${JSON.stringify(response.data, null, 2)}`);
-        }
+        await reply(resultMessage);
+        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (error) {
         console.error("React post error:", error);
