@@ -31,7 +31,7 @@ function formatDuration(seconds) {
 // COMMAND: video (PrexzyAPI /ytmp4)
 // ============================================
 cmd({
-    pattern: "vido",
+    pattern: "video2",
     alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video via PrexzyAPI",
     category: "download",
