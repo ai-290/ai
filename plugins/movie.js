@@ -15,7 +15,7 @@ function getVideoId(url) {
 // COMMAND: video (PrexzyAPI /ytmp4 API)
 // ============================================
 cmd({
-    pattern: "vieo",
+    pattern: "video",
     alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video",
     category: "download",
@@ -39,8 +39,11 @@ cmd({
             }
             const videoId = getVideoId(text);
             if (!videoId) return reply("❌ Invalid YouTube URL!");
+            
+            // Search by videoId to get info
             const searchFromUrl = await yts({ videoId: videoId });
             vid = searchFromUrl;
+            url = `https://youtube.com/watch?v=${videoId}`; // Ensure clean URL
         } else {
             const search = await yts(text);
             if (!search.videos || !search.videos.length) {
@@ -60,32 +63,53 @@ cmd({
 
         // Use PrexzyAPI /ytmp4 API
         const apiUrl = `https://prexzyapis.com/download/ytmp4?url=${encodeURIComponent(url)}`;
-        const response = await axios.get(apiUrl);
         
-        // Check new API response structure
-        if (response.data.status === true && response.data.download_url) {
-            const videoData = response.data;
-            const info = videoData.info;
+        console.log("Fetching from API:", apiUrl); // DEBUG
+        
+        const response = await axios.get(apiUrl, {
+            timeout: 60000, // 60 seconds timeout
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        console.log("API Response:", JSON.stringify(response.data, null, 2)); // DEBUG
+        
+        // Check API response - handle both old and new structure
+        const data = response.data;
+        
+        if (data.status === true || data.status === "true") {
+            // Try different possible URL locations
+            const downloadUrl = data.download_url || data.result?.url || data.url || data.link;
             
-            // Calculate size in MB
-            const sizeInMB = videoData.filesize 
-                ? (videoData.filesize / 1024 / 1024).toFixed(2) + ' MB'
-                : 'Unknown';
+            if (!downloadUrl) {
+                console.log("No download URL found in response:", data);
+                return reply("❌ API returned success but no download URL found!");
+            }
+            
+            // Get video info from API or fallback to search
+            const title = data.info?.title || data.title || vid.title;
+            const quality = data.quality || data.result?.quality || 'Unknown';
+            const filesize = data.filesize || data.size || data.result?.size;
+            const sizeInMB = filesize ? (filesize / 1024 / 1024).toFixed(2) + ' MB' : 'Unknown';
+            
+            console.log("Download URL:", downloadUrl); // DEBUG
             
             // Send the video
             await conn.sendMessage(from, {
-                video: { url: videoData.download_url },
-                caption: `🎬 *${info?.title || vid.title}*\n📦 *Size:* ${sizeInMB}\n📺 *Quality:* ${videoData.quality || 'Unknown'}\n\n> ${DESCRIPTION}`
+                video: { url: downloadUrl },
+                caption: `🎬 *${title}*\n📦 *Size:* ${sizeInMB}\n📺 *Quality:* ${quality}\n\n> ${DESCRIPTION}`
             }, { quoted: mek });
             
             await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
         } else {
-            return reply("❌ Failed to get download URL from API!");
+            console.log("API returned error status:", data);
+            return reply("❌ API returned error status!");
         }
 
     } catch (e) {
         console.error("Error in .video command:", e);
-        reply("❌ Error occurred, please try again later!");
+        reply(`❌ Error occurred: ${e.message}`);
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
