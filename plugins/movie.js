@@ -118,8 +118,8 @@ cmd({
 // COMMAND: video (Video Download) - With Fallback
 // ============================================
 cmd({
-    pattern: "video4",
-    alias: ["ytv", "ytmp4", "vd"],
+    pattern: "video",
+    alias: ["ytv", "ytmp4", "xcv"],
     desc: "Download YouTube video",
     category: "download",
     react: "📹",
