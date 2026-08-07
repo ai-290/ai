@@ -15,7 +15,7 @@ function getVideoId(url) {
 // COMMAND: video (PrexzyAPI /ytmp4 API)
 // ============================================
 cmd({
-    pattern: "vide",
+    pattern: "video1",
     alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video",
     category: "download",
