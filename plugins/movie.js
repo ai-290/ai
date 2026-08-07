@@ -15,7 +15,7 @@ function getVideoId(url) {
 // COMMAND: video (JerryCoder API)
 // ============================================
 cmd({
-    pattern: "video5",
+    pattern: "mmmm",
     alias: ["ytv", "ytmp4", "vbz"],
     desc: "Download YouTube video",
     category: "download",
