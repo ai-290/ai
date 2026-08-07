@@ -15,7 +15,7 @@ function getVideoId(url) {
 // COMMAND: video (Multi-API Fallback)
 // ============================================
 cmd({
-    pattern: "video2",
+    pattern: "video1",
     alias: ["ytv", "yt", "ytmp4", "vbz"],
     desc: "Download YouTube video (MP4)",
     category: "download",
