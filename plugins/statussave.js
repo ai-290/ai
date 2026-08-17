@@ -5,32 +5,30 @@ import config from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
-// Define the command keywords
 const commandKeywords = ["send", "sendme", "do", "give", "bhejo", "bhej", "save", "sand", "sent", "forward"];
 
-// No prefix keyword handler
 cmd({
-    'on': "body"
-}, async (client, message, store, {
+    'on': "body",
+    dontAddCommandList: true,  // ✅ Add this if needed by your framework
+    filename: import.meta.url  // ✅ Add this too
+}, async (client, message, store, {  // ✅ 'message' yahan hai
     from,
     body,
     isGroup,
     reply,
-    userConfig  // Added userConfig parameter
+    userConfig
 }) => {
     try {
-        // Ignore messages from groups (remove this line if you want it to work in groups too)
         if (isGroup) return;
 
-        // Get DESCRIPTION from userConfig if available, otherwise use config.DESCRIPTION
         const DESCRIPTION = userConfig?.DESCRIPTION || config.DESCRIPTION || "";
 
         const messageText = body.toLowerCase();
         const containsKeyword = commandKeywords.some(word => messageText.includes(word));
 
-        // Only process if contains keyword AND replying to status broadcast
+        // ✅ Ab 'message' defined hai, yeh kaam karega
         if (containsKeyword && message.quoted?.chat === 'status@broadcast') {
-            // ⏳ React - processing
+            
             await client.sendMessage(from, { react: { text: '⏳', key: message.key } });
 
             const buffer = await message.quoted.download();
@@ -62,25 +60,20 @@ cmd({
                     };
                     break;
                 default:
-                    // 🚫 React - unsupported type
                     await client.sendMessage(from, { react: { text: '❌', key: message.key } });
-                    return; // Silently ignore unsupported types
+                    return;
             }
 
             try {
-                // Forward status to the same chat where keyword was sent
                 await client.sendMessage(from, messageContent, options);
-                // ✅ React - success
                 await client.sendMessage(from, { react: { text: '✅', key: message.key } });
             } catch (sendError) {
                 console.error("Failed to send status:", sendError);
-                // ❌ React - send failed
                 await client.sendMessage(from, { react: { text: '❌', key: message.key } });
             }
         }
     } catch (error) {
         console.error("Keyword Status Save Error:", error);
-        // ❌ React - general error
         if (message && message.key) {
             try {
                 await client.sendMessage(from, { react: { text: '❌', key: message.key } });
