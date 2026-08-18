@@ -7,6 +7,57 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Recursively search any API response shape for the first value that
+// looks like a real image URL - handles unknown/changing field names
+// (file_url, url, download_url, nested objects, arrays, etc.)
+const findImageUrl = (obj, depth = 0) => {
+    if (!obj || depth > 5) return null;
+
+    if (typeof obj === 'string') {
+        const trimmed = obj.trim();
+        if (/^https?:\/\/\S+\.(png|jpe?g|webp|gif)(\?\S*)?$/i.test(trimmed)) return trimmed;
+        if (/^https?:\/\/\S+/i.test(trimmed)) return trimmed; // fallback: any http(s) link
+        return null;
+    }
+
+    if (Array.isArray(obj)) {
+        for (const item of obj) {
+            const found = findImageUrl(item, depth + 1);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    if (typeof obj === 'object') {
+        // Prioritize common key names first
+        const priorityKeys = ['file_url', 'url', 'image', 'link', 'download_url', 'result', 'data'];
+        for (const key of priorityKeys) {
+            if (key in obj) {
+                const found = findImageUrl(obj[key], depth + 1);
+                if (found) return found;
+            }
+        }
+        // Fall back to scanning every other key
+        for (const key of Object.keys(obj)) {
+            if (priorityKeys.includes(key)) continue;
+            const found = findImageUrl(obj[key], depth + 1);
+            if (found) return found;
+        }
+    }
+
+    return null;
+};
+
+const isValidUrl = (val) => {
+    if (typeof val !== 'string' || !val.trim()) return false;
+    try {
+        new URL(val.trim());
+        return true;
+    } catch {
+        return false;
+    }
+};
+
 cmd({
     pattern: "screenshot",
     alias: ["ss", "ssweb", "webshots"],
@@ -41,37 +92,22 @@ async (conn, mek, m, { from, args, q, reply, react }) => {
         // API endpoint - Prexzy API
         const apiUrl = `https://prexzyapis.com/ssweb/webss?url=${encodeURIComponent(url)}`;
         const { data } = await axios.get(apiUrl, { timeout: 30000 });
-
         console.log("API Response:", JSON.stringify(data, null, 2));
 
-        // Extract image URL from response (handle multiple possible structures)
-        let screenshotUrl = null;
+        // Extract image URL from the response, whatever shape it comes in
+        const screenshotUrl = findImageUrl(data);
 
-        if (data?.result) {
-            // If result is a string (direct URL)
-            if (typeof data.result === 'string') {
-                screenshotUrl = data.result;
-            }
-            // If result is an object with file_url
-            else if (data.result?.file_url) {
-                screenshotUrl = data.result.file_url;
-            }
-            // If result is an object with url
-            else if (data.result?.url) {
-                screenshotUrl = data.result.url;
-            }
-        }
-
-        // Also check other possible response structures
-        if (!screenshotUrl) {
-            screenshotUrl = data?.data?.url || data?.url || data?.image || data?.link;
-        }
-
-        if (!screenshotUrl) {
+        if (!screenshotUrl || !isValidUrl(screenshotUrl)) {
             await conn.sendMessage(from, {
                 react: { text: "❌", key: m.key }
             });
-            return reply("❌ *Failed to capture screenshot!*\n\nThe API returned an invalid response. Please try again later.");
+            // Show the raw response so the actual field name can be identified if this happens again
+            const rawPreview = JSON.stringify(data).slice(0, 500);
+            return reply(
+                `❌ *Failed to capture screenshot!*\n\n` +
+                `Could not find a valid image URL in the API response.\n\n` +
+                `*Raw response:*\n\`\`\`${rawPreview}\`\`\``
+            );
         }
 
         // Download screenshot image
@@ -93,11 +129,9 @@ async (conn, mek, m, { from, args, q, reply, react }) => {
     } catch (e) {
         console.error("❌ Error in Screenshot command:", e.message);
         console.error(e.stack);
-
         await conn.sendMessage(from, {
             react: { text: "❌", key: m.key }
         });
-
         reply(`❌ *Error Occurred!*\n\n${e.message || "Please try again later."}`);
     }
 });
