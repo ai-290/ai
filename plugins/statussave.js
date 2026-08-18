@@ -1,85 +1,110 @@
-// plugins/savestatus.js - ESM Version
+// ERFAN-MD
 import { fileURLToPath } from 'url';
+import path from 'path';
 import { cmd } from '../command.js';
-import config from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const commandKeywords = ["send", "sendme", "do", "give", "bhejo", "bhej", "save", "sand", "sent", "forward"];
+// ERFAN-MD
 
 cmd({
-    'on': "body",
-    dontAddCommandList: true,  // ✅ Add this if needed by your framework
-    filename: import.meta.url  // ✅ Add this too
-}, async (client, message, store, {  // ✅ 'message' yahan hai
-    from,
-    body,
-    isGroup,
-    reply,
-    userConfig
-}) => {
+    pattern: "groupstatus",
+    alias: ["togstatus", "swgc", "gs"],
+    desc: "Post a text, image, or video status to the current group.",
+    category: "admin",
+    react: "📢",
+    filename: __filename
+}, async (conn, mek, m, { from, text, reply, isCreator }) => {
+
+    // ── Owner only ──────────────────────────────────────────────────────────
+    if (!isCreator) {
+        return reply("❌ This command is only for the *bot owner*!");
+    }
+
+    // ── Group only ──────────────────────────────────────────────────────────
+    if (!from.endsWith("@g.us")) {
+        return reply("❌ This command can only be used in *group chats*!");
+    }
+
     try {
-        if (isGroup) return;
+        const caption = text?.trim() || "";
+        const quotedMsg = m.quoted;
+        const quoted = quotedMsg?.msg || quotedMsg;
+        const mimeType = quoted?.mimetype || "";
+        const quotedType = Object.keys(quotedMsg?.message || {})[0] || "";
 
-        const DESCRIPTION = userConfig?.DESCRIPTION || config.DESCRIPTION || "";
+        // ── Must have text or quoted media ──────────────────────────────────
+        if (!quotedMsg && !caption) {
+            return reply(
+                `📢 *Group Status — Usage:*\n\n` +
+                `*Text status:*\n` +
+                `  \`.groupstatus Hello everyone!\`\n\n` +
+                `*Image/video status:*\n` +
+                `  Reply to an image/video with \`.groupstatus Your caption here\`\n\n` +
+                `*Media without caption:*\n` +
+                `  Reply to an image/video with \`.groupstatus\`\n\n` +
+                `━━━━━━━━━━━━━━━━━━\n` +
+                `~ *ERFAN-MD*`
+            );
+        }
 
-        const messageText = body.toLowerCase();
-        const containsKeyword = commandKeywords.some(word => messageText.includes(word));
-
-        // ✅ Ab 'message' defined hai, yeh kaam karega
-        if (containsKeyword && message.quoted?.chat === 'status@broadcast') {
-            
-            await client.sendMessage(from, { react: { text: '⏳', key: message.key } });
-
-            const buffer = await message.quoted.download();
-            const mtype = message.quoted.mtype;
-            const originalCaption = message.quoted.text || '';
-            const options = { quoted: message };
-
-            let messageContent = {};
-            switch (mtype) {
-                case "imageMessage":
-                    messageContent = {
-                        image: buffer,
-                        caption: originalCaption ? `${originalCaption}\n\n> ${DESCRIPTION}` : (DESCRIPTION ? `> ${DESCRIPTION}` : ""),
-                        mimetype: message.quoted.mimetype || "image/jpeg"
-                    };
-                    break;
-                case "videoMessage":
-                    messageContent = {
-                        video: buffer,
-                        caption: originalCaption ? `${originalCaption}\n\n> ${DESCRIPTION}` : (DESCRIPTION ? `> ${DESCRIPTION}` : ""),
-                        mimetype: message.quoted.mimetype || "video/mp4"
-                    };
-                    break;
-                case "audioMessage":
-                    messageContent = {
-                        audio: buffer,
-                        mimetype: "audio/mp4",
-                        ptt: message.quoted.ptt || false
-                    };
-                    break;
-                default:
-                    await client.sendMessage(from, { react: { text: '❌', key: message.key } });
-                    return;
-            }
-
-            try {
-                await client.sendMessage(from, messageContent, options);
-                await client.sendMessage(from, { react: { text: '✅', key: message.key } });
-            } catch (sendError) {
-                console.error("Failed to send status:", sendError);
-                await client.sendMessage(from, { react: { text: '❌', key: message.key } });
+        // ── Download media once, if any ─────────────────────────────────────
+        let mediaBuffer = null;
+        if (quotedMsg) {
+            mediaBuffer = await quotedMsg.download();
+            if (!mediaBuffer) {
+                return reply("❌ Failed to download the media. Please try again.");
             }
         }
+
+        const header = "📢 *GROUP STATUS*";
+        const finalCaption = caption
+            ? `${header}\n\n${caption}`
+            : header;
+
+        // ── Text status ─────────────────────────────────────────────────────
+        if (!mediaBuffer) {
+            await conn.sendMessage(from, {
+                text: `${header}\n\n${caption}\n\n— ${new Date().toLocaleString()}`
+            }, { quoted: mek });
+
+            return reply("✅ Text group status posted!");
+        }
+
+        // ── Image status ────────────────────────────────────────────────────
+        if (mimeType.startsWith("image/") || quotedType === "imageMessage") {
+            await conn.sendMessage(from, {
+                image: mediaBuffer,
+                caption: finalCaption
+            }, { quoted: mek });
+
+            return reply("✅ Image group status posted!");
+        }
+
+        // ── Video status ────────────────────────────────────────────────────
+        if (mimeType.startsWith("video/") || quotedType === "videoMessage") {
+            await conn.sendMessage(from, {
+                video: mediaBuffer,
+                caption: finalCaption
+            }, { quoted: mek });
+
+            return reply("✅ Video group status posted!");
+        }
+
+        // ── Audio not supported ─────────────────────────────────────────────
+        if (
+            mimeType.startsWith("audio/") ||
+            quotedType === "audioMessage" ||
+            quotedType === "pttMessage"
+        ) {
+            return reply("❌ Audio status is not supported in this version. Please use text, image, or video.");
+        }
+
+        return reply("❌ Unsupported media type. Please reply to an image or video.");
+
     } catch (error) {
-        console.error("Keyword Status Save Error:", error);
-        if (message && message.key) {
-            try {
-                await client.sendMessage(from, { react: { text: '❌', key: message.key } });
-            } catch (reactError) {
-                console.error("Failed to send error reaction:", reactError);
-            }
-        }
+        console.error("GroupStatus Error:", error);
+        return reply(`❌ *Error:* ${error.message}`);
     }
 });
