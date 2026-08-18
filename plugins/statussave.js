@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 // ERFAN-MD
 
 cmd({
-    pattern: "groupstatus",
+    pattern: "gcxy",
     alias: ["togstatus", "swgc", "gs"],
     desc: "Post a text, image, or video status to the current group.",
     category: "admin",
