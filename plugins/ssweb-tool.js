@@ -90,7 +90,7 @@ async (conn, mek, m, { from, args, q, reply, react }) => {
         );
 
         // API endpoint - Prexzy API
-        const apiUrl = `https://prexzyapis.com/ssweb/webss?url=${encodeURIComponent(url)}`;
+        const apiUrl = `https://prexzyapis.com/ssweb/screenshotLayer?url=${encodeURIComponent(url)}`;
         const { data } = await axios.get(apiUrl, { timeout: 30000 });
         console.log("API Response:", JSON.stringify(data, null, 2));
 
