@@ -1,25 +1,12 @@
 // ERFAN-MD
 import { fileURLToPath } from 'url';
+import config from '../config.js';
 import { cmd, commands } from '../command.js';
 import path from 'path';
 import { runtime } from '../lib/functions.js';
-import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// ── Direct menu image link (paste your image URL here) ─────────────────────
-const MENU_IMAGE_URL = "https://i.ibb.co/YOUR-IMAGE/menu.jpg";
-
-// ── Bot info (hardcoded — no config) ───────────────────────────────────────
-const BOT_INFO = {
-    BOT_NAME: "ERFAN-MD",
-    OWNER_NAME: "Erfan",
-    PREFIX: ".",
-    MODE: "private",
-    VERSION: "1.0.0",
-    DESCRIPTION: "ERFAN-MD WhatsApp Bot"
-};
 
 // Helper function for small caps text
 const toSmallCaps = (text) => {
@@ -35,101 +22,89 @@ const toSmallCaps = (text) => {
     return text.split('').map(char => smallCapsMap[char] || char).join('');
 };
 
-// Format category with sidebar design
+// Format category with sidebar design from Menu 2
 const formatCategory = (category, cmds) => {
-    const validCmds = cmds.filter(c => c.pattern && c.pattern.trim() !== '');
-    if (validCmds.length === 0) return '';
+    // Filter out commands with empty or undefined patterns
+    const validCmds = cmds.filter(cmd => cmd.pattern && cmd.pattern.trim() !== '');
+
+    if (validCmds.length === 0) return ''; // Skip empty categories
 
     let title = `\n━━━━━『 ${toSmallCaps(category.toUpperCase())} 』━━━━━\n◉\n`;
-    let body = validCmds.map(c => `◉ ➤ ${toSmallCaps(c.pattern)}`).join('\n');
+    let body = validCmds.map(cmd => {
+        const commandName = cmd.pattern || '';
+        return `◉ ➤ ${toSmallCaps(commandName)}`;
+    }).join('\n');
     let footer = `\n◉\n┗━━━━━━━━━━━━━━`;
     return `${title}${body}${footer}`;
 };
 
-// Fetch menu image directly from the link
-const fetchMenuImage = async (url) => {
-    if (!url || typeof url !== 'string' || url.trim() === '') return null;
-    if (!/^https?:\/\/.+/i.test(url.trim())) return null;
-
-    try {
-        const response = await axios.get(url.trim(), {
-            timeout: 10000,
-            maxRedirects: 5,
-            responseType: 'arraybuffer',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/*,*/*'
-            },
-            validateStatus: (status) => status < 400
-        });
-
-        const contentType = response.headers['content-type'];
-        if (contentType && contentType.startsWith('image/')) {
-            return Buffer.from(response.data);
-        }
-        return null;
-    } catch (error) {
-        console.log('Menu image fetch failed:', error.message);
-        return null;
-    }
-};
-
 cmd({
     pattern: "menu",
-    alias: ["m", "help", "allmenu", "fullmenu"],
+    alias: ["m", "help", "allmenu","fullmenu"],
     use: '.menu',
     desc: "Show all bot commands",
     category: "main",
     react: "⚡",
     filename: __filename
 },
-async (conn, mek, m, { from, reply, userConfig }) => {
+async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply, userConfig }) => {
     try {
         // Show typing presence before processing
         await conn.sendPresenceUpdate('composing', from);
 
-        // ── Deduplicate commands by pattern (fixes double listing) ──────────
-        const uniqueMap = new Map();
-        for (const c of Object.values(commands)) {
-            if (c && c.pattern && c.pattern.trim() !== '' && !uniqueMap.has(c.pattern)) {
-                uniqueMap.set(c.pattern, c);
-            }
-        }
-        const allCommands = [...uniqueMap.values()];
-        const totalCommands = allCommands.length;
+        // Track patterns we've already listed so the same command
+        // never gets printed twice (fixes the "double double" bug)
+        const seenPatterns = new Set();
 
-        // ── Get unique valid categories ──────────────────────────────────────
-        const categories = [...new Set(allCommands.map(c => c.category))].filter(cat =>
+        // Get all unique categories and filter out undefined/null categories
+        const categories = [...new Set(Object.values(commands).map(c => c.category))].filter(cat =>
             cat && cat.trim() !== '' && cat !== 'undefined'
         );
 
-        // ── Organize commands by category ────────────────────────────────────
+        // Organize commands by category, filter out empty categories,
+        // and dedupe by pattern so duplicated entries in `commands`
+        // don't get listed more than once.
         const categorized = {};
         categories.forEach(cat => {
-            const categoryCommands = allCommands.filter(c => c.category === cat);
-            if (categoryCommands.length > 0) {
-                categorized[cat] = categoryCommands;
+            const categoryCommands = Object.values(commands).filter(c => c.category === cat);
+            const validCommands = categoryCommands.filter(cmd => {
+                if (!cmd.pattern || cmd.pattern.trim() === '') return false;
+                const key = cmd.pattern.trim().toLowerCase();
+                if (seenPatterns.has(key)) return false;
+                seenPatterns.add(key);
+                return true;
+            });
+            if (validCommands.length > 0) {
+                categorized[cat] = validCommands;
             }
         });
 
-        // ── Build menu sections ──────────────────────────────────────────────
+        // Unique command count (based on the same dedupe pass above)
+        let totalCommands = seenPatterns.size;
+
+        // Build menu sections - only for categories that have commands
         let menuSections = '';
         for (const [category, cmds] of Object.entries(categorized)) {
-            const section = formatCategory(category, cmds);
-            if (section !== '') {
-                menuSections += section;
+            if (cmds && cmds.length > 0) {
+                const section = formatCategory(category, cmds);
+                if (section !== '') {
+                    menuSections += section;
+                }
             }
         }
 
-        // ── Bot info values (userConfig first, then hardcoded defaults) ──────
-        const BOT_NAME = userConfig?.BOT_NAME || BOT_INFO.BOT_NAME;
-        const OWNER_NAME = userConfig?.OWNER_NAME || BOT_INFO.OWNER_NAME;
-        const PREFIX = userConfig?.PREFIX || BOT_INFO.PREFIX;
-        const MODE = userConfig?.MODE || BOT_INFO.MODE;
-        const VERSION = userConfig?.VERSION || BOT_INFO.VERSION;
-        const DESCRIPTION = userConfig?.DESCRIPTION || BOT_INFO.DESCRIPTION;
+        // Get all values from userConfig with fallback to config
+        const BOT_NAME = userConfig?.BOT_NAME || config.BOT_NAME || "Bot";
+        const OWNER_NAME = userConfig?.OWNER_NAME || config.OWNER_NAME || "Owner";
+        const PREFIX = userConfig?.PREFIX || config.PREFIX || ".";
+        const MODE = userConfig?.MODE || config.MODE || "private";
+        const VERSION = userConfig?.VERSION || config.VERSION || "1.0.0";
+        const DESCRIPTION = userConfig?.DESCRIPTION || config.DESCRIPTION || "";
 
-        // ── Main menu text ───────────────────────────────────────────────────
+        // Get BOT_IMAGE from userConfig first, then config.BOT_IMAGE, then config.BOT_MEDIA_URL
+        const BOT_IMAGE = userConfig?.BOT_IMAGE || userConfig?.BOT_MEDIA_URL || config.BOT_IMAGE || config.BOT_MEDIA_URL;
+
+        // Main menu text with sidebar design from Menu 2
         let dec = `
   
 ━━━━━━ 🤖 ʙᴏᴛ ɪɴғᴏ ━━━━━━
@@ -155,27 +130,23 @@ ${menuSections}
             }
         };
 
-        // ── Fetch image directly from the link ──────────────────────────────
-        const imageBuffer = await fetchMenuImage(MENU_IMAGE_URL);
-
-        // If image fetch fails, send text-only menu
-        if (!imageBuffer) {
-            return await conn.sendMessage(from, {
+        if (BOT_IMAGE) {
+            // Config-provided image, sent directly by URL (no manual fetch/validation)
+            await conn.sendMessage(from, {
+                image: { url: BOT_IMAGE },
+                caption: dec,
+                contextInfo
+            }, { quoted: mek });
+        } else {
+            // No image configured - send text only
+            await conn.sendMessage(from, {
                 text: dec,
                 contextInfo
             }, { quoted: mek });
         }
-
-        // ── Send menu with image ─────────────────────────────────────────────
-        await conn.sendMessage(from, {
-            image: imageBuffer,
-            caption: dec,
-            contextInfo
-        }, { quoted: mek });
 
     } catch (e) {
         console.log(e);
         reply(`Error: ${e}`);
     }
 });
-    
