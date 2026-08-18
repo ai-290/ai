@@ -1,3 +1,13 @@
+// ERFAN-MD
+import { fileURLToPath } from 'url';
+import path from 'path';
+import axios from 'axios';
+import { downloadContentFromMessage } from '@whiskeysockets/baileys';
+import { cmd } from '../command.js';
+import FormData from 'form-data';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // ==================== REMINI COMMAND ====================
 cmd({
     pattern: "remini",
