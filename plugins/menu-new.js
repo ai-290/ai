@@ -40,7 +40,7 @@ const formatCategory = (category, cmds) => {
 
 cmd({
     pattern: "menu",
-    alias: ["m", "help", "allmenu","fullmenu"],
+    alias: ["mm", "help", "allmenu","fullmenu"],
     use: '.menu',
     desc: "Show all bot commands",
     category: "main",
@@ -102,7 +102,11 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
         const DESCRIPTION = userConfig?.DESCRIPTION || config.DESCRIPTION || "";
 
         // Get BOT_IMAGE from userConfig first, then config.BOT_IMAGE, then config.BOT_MEDIA_URL
-        const BOT_IMAGE = userConfig?.BOT_IMAGE || userConfig?.BOT_MEDIA_URL || config.BOT_IMAGE || config.BOT_MEDIA_URL;
+        // Only accept values that are actually http(s) links - skips stale local
+        // paths (e.g. "./lib/ERFAN.jpg") that may still be saved in old userConfig records.
+        const isValidImageUrl = (val) => typeof val === 'string' && /^https?:\/\//i.test(val.trim());
+        const BOT_IMAGE = [userConfig?.BOT_IMAGE, userConfig?.BOT_MEDIA_URL, config.BOT_IMAGE, config.BOT_MEDIA_URL]
+            .find(isValidImageUrl);
 
         // Main menu text with sidebar design from Menu 2
         let dec = `
