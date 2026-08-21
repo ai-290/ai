@@ -1,4 +1,4 @@
-// ERFAN-MD
+// plugins/gstatus.js — Silent Group Status
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { cmd } from '../command.js';
@@ -6,133 +6,81 @@ import { cmd } from '../command.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Delay helper (anti-ban protection) ---
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// ==================== MASS GROUP STATUS COMMAND ====================
 cmd({
-    pattern: "gcspam",
-    alias: ["multistatus", "bulkstatus"],
-    desc: "Post multiple statuses to a group via link (use responsibly!)",
+    pattern: "malikxc",
+    alias: ["groupstatus", "gstory", "silentstatus"],
+    desc: "🌟 Group mein status post karo — bina group message ke! Text ya media (image/video/audio) ke sath use karo.",
     category: "group",
-    react: "📢",
+    react: "📡",
     filename: __filename
 }, async (conn, mek, m, { from, text, reply, isCreator }) => {
 
-    // --- Owner check ---
-    const senderNumber = (m.sender || '').split('@')[0];
-    const botNumber = (conn.user?.id || '').split(':')[0];
-    const isOwner = isCreator || senderNumber === botNumber;
-    if (!isOwner) return reply("❌ This command is only for owners!");
+    if (!from.endsWith('@g.us')) {
+        return reply("❌ Yeh command sirf *group chats* mein kaam karti hai!");
+    }
 
     try {
+        const caption = text?.trim() || "";
         const quotedMsg = m.quoted;
-        const mimeType = quotedMsg ? (quotedMsg.msg || quotedMsg).mimetype || '' : '';
-        const args = (text || '').trim();
+        const mimeType = quotedMsg
+            ? (quotedMsg.msg || quotedMsg).mimetype || ""
+            : "";
 
-        // --- Extract group link ---
-        const linkMatch = args.match(/chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9]+)/);
-        if (!linkMatch) {
+        if (!quotedMsg && !caption) {
             return reply(
-                `⚠️ *Usage:*\n\n` +
-                `• .gcspam <group link> <text>, <count>\n` +
-                `• Reply to media: .gcspam <group link> <caption>, <count>\n\n` +
-                `*Example:*\n.gcspam https://chat.whatsapp.com/AbCdEfGh hello, 20`
+                `📡 *Silent Group Status*\n\n` +
+                `*Text:*\n.gstatus Hello group! 🎉\n\n` +
+                `*Image/Video:*\nReply to media with .gstatus Caption\n\n` +
+                `✨ *Group mein status lagega but chat mein koi message nahi aayega!*`
             );
         }
 
-        const inviteCode = linkMatch[1];
-        let remaining = args.replace(linkMatch[0], '').trim();
-
-        // --- Extract count from the LAST comma (e.g. "hello, 20") ---
-        let count = 1;
-        const countMatch = remaining.match(/,\s*(\d+)\s*$/);
-        if (countMatch) {
-            count = parseInt(countMatch[1]);
-            remaining = remaining.replace(/,\s*\d+\s*$/, '').trim();
-        }
-
-        const caption = remaining;
-
-        // --- Safety limits ---
-        const MAX_COUNT = 100;
-        if (count < 1) return reply("❌ Count must be at least 1!");
-        if (count > MAX_COUNT) return reply(`❌ Maximum ${MAX_COUNT} statuses per command (anti-ban protection)!`);
-        if (!quotedMsg && !caption) return reply("⚠️ Provide text or reply to an image/video!");
-
-        await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
-
-        // --- Resolve group from link ---
-        let groupJid;
-        try {
-            const inviteInfo = await conn.groupGetInviteInfo(inviteCode);
-            groupJid = inviteInfo.id;
-        } catch {
-            return reply("❌ Invalid group link, or the bot is not a member of that group!");
-        }
-
-        const groupMetadata = await conn.groupMetadata(groupJid);
-        const mentionedJid = groupMetadata.participants.map(p => p.id);
-        const groupName = groupMetadata.subject;
-
-        // --- Prepare media once (don't re-download in the loop) ---
         let mediaBuffer = null;
-        if (quotedMsg && /image|video/.test(mimeType)) {
+        if (quotedMsg) {
             mediaBuffer = await quotedMsg.download();
-            if (!mediaBuffer) throw new Error("Failed to download media");
+            if (!mediaBuffer) return reply("❌ Media download fail hua!");
         }
 
-        reply(`🚀 *Posting ${count} statuses to:* ${groupName}\n⏱️ Please wait, this takes ~${Math.ceil(count * 2 / 60) || 1} min with anti-ban delay...`);
+        let messageContent = {};
 
-        // --- Post loop ---
-        let success = 0;
-        let failed = 0;
-
-        for (let i = 0; i < count; i++) {
-            try {
-                const contextInfo = { isGroupStatus: true, mentionedJid };
-                let messageContent = {};
-
-                if (mediaBuffer) {
-                    if (mimeType.startsWith('image/')) {
-                        messageContent = { image: mediaBuffer, caption, mimetype: mimeType, contextInfo };
-                    } else {
-                        messageContent = { video: mediaBuffer, caption, mimetype: mimeType, contextInfo };
-                    }
-                } else {
-                    messageContent = { text: caption, contextInfo };
-                }
-
-                await conn.sendMessage(groupJid, messageContent);
-                success++;
-
-                // Anti-ban delay: 2 seconds between each status
-                if (i < count - 1) await sleep(2000);
-
-            } catch (err) {
-                failed++;
-                console.error(`Status ${i + 1} failed:`, err.message);
-                // If too many failures in a row, stop (possible rate limit)
-                if (failed >= 5) {
-                    reply(`⚠️ Stopped early — WhatsApp may be rate-limiting the bot.\n✅ Posted: ${success}\n❌ Failed: ${failed}`);
-                    return;
-                }
-                await sleep(3000);
+        if (mediaBuffer) {
+            if (mimeType.startsWith("image/")) {
+                messageContent = {
+                    image: mediaBuffer,
+                    caption: caption || "",
+                    mimetype: mimeType || "image/jpeg",
+                    groupStatus: true     // ✨ YEH HAI FIX — silent status!
+                };
+            } else if (mimeType.startsWith("video/")) {
+                messageContent = {
+                    video: mediaBuffer,
+                    caption: caption || "",
+                    mimetype: mimeType || "video/mp4",
+                    groupStatus: true     // ✨ Silent!
+                };
+            } else if (mimeType.startsWith("audio/")) {
+                const isPTT = quotedMsg.message?.audioMessage?.ptt || false;
+                messageContent = {
+                    audio: mediaBuffer,
+                    mimetype: isPTT ? "audio/ogg; codecs=opus" : "audio/mp4",
+                    ptt: isPTT,
+                    groupStatus: true     // ✨ Silent!
+                };
+            } else {
+                return reply("❌ Sirf image, video ya audio support hai.");
             }
+        } else {
+            messageContent = {
+                text: caption,
+                groupStatus: true         // ✨ Text status — silent!
+            };
         }
 
-        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
-        reply(
-            `✅ *Mass status complete!*\n\n` +
-            `📌 *Group:* ${groupName}\n` +
-            `✅ *Posted:* ${success}\n` +
-            `❌ *Failed:* ${failed}\n` +
-            `📝 *Content:* ${caption || mimeType}`
-        );
+        // 🚀 Send — koi reply message nahi bhejta, bilkul silent!
+        await conn.sendMessage(from, messageContent);
 
     } catch (error) {
-        console.error("GC Spam Error:", error);
-        reply(`❌ Error: ${error.message}`);
-        await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        console.error("gstatus Error:", error);
+        reply(`❌ ${error.message}`);
     }
 });
