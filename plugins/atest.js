@@ -8,6 +8,20 @@ import { generateWAMessageContent, generateWAMessageFromContent } from '@whiskey
 
 const __filename = fileURLToPath(import.meta.url);
 
+// ==================== PARSE GROUP LIMIT FROM COMMAND TEXT ====================
+function parseGroupLimit(inputText) {
+    if (!inputText) return { limit: null, message: "" };
+    const trimmed = inputText.trim();
+    const match = trimmed.match(/^(\d+)\s*(.*)$/);
+    if (match) {
+        let limit = parseInt(match[1]);
+        if (isNaN(limit) || limit <= 0) return { limit: null, message: trimmed };
+        if (limit > 10) limit = 10; // Hard cap at 10
+        return { limit, message: match[2].trim() };
+    }
+    return { limit: null, message: trimmed };
+}
+
 // ==================== V2 RELAY FUNCTION (PURE STATUS - NO CHAT MESSAGE FOR TEXT) ====================
 async function relayGroupStatusV2(conn, jid, text) {
     const messageSecret = crypto.randomBytes(32);
@@ -38,20 +52,18 @@ async function relayGroupStatusV2(conn, jid, text) {
     return msg;
 }
 
-// ==================== MEDIA STATUS FUNCTION (SENDS TO ALL GROUPS WITH isGroupStatus) ====================
-async function sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, onProgress) {
-    const groups = await conn.groupFetchAllParticipating();
-    const groupIds = Object.keys(groups);
-    const total = groupIds.length;
+// ==================== MEDIA STATUS FUNCTION (SENDS TO TARGET GROUPS WITH isGroupStatus) ====================
+async function sendMediaStatusToGroups(conn, targetGroupIds, mediaBuffer, mimeType, caption, onProgress) {
+    const total = targetGroupIds.length;
     
-    if (!total) throw new Error("No groups found");
+    if (!total) throw new Error("No target groups found");
     
     let success = 0;
     let failed = 0;
     
-    for (let i = 0; i < groupIds.length; i++) {
+    for (let i = 0; i < total; i++) {
         try {
-            const groupMetadata = await conn.groupMetadata(groupIds[i]);
+            const groupMetadata = await conn.groupMetadata(targetGroupIds[i]);
             const participants = groupMetadata.participants;
             const mentionedJid = participants.map(p => p.id);
             const contextInfo = { isGroupStatus: true, mentionedJid: mentionedJid };
@@ -84,7 +96,7 @@ async function sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, 
                 };
             }
             
-            await conn.sendMessage(groupIds[i], messageContent);
+            await conn.sendMessage(targetGroupIds[i], messageContent);
             success++;
             
             if (onProgress && (i + 1) % 10 === 0) {
@@ -96,7 +108,7 @@ async function sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, 
             
         } catch (err) {
             failed++;
-            console.error(`Failed to send to ${groupIds[i]}:`, err.message);
+            console.error(`Failed to send to ${targetGroupIds[i]}:`, err.message);
         }
     }
     
@@ -105,9 +117,9 @@ async function sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, 
 
 
 cmd({
-    pattern: "malikxz",
+    pattern: "gcstatus",
     alias: ["statusgc", "swgc"],
-    desc: "Text or Media → ALL groups (Text: pure status | Media: chat + status)",
+    desc: "Text or Media → N groups (Text: pure status | Media: chat + status). Max 10 groups limit.",
     category: "group",
     react: "📢",
     filename: __filename
@@ -117,10 +129,12 @@ cmd({
     try {
         const quotedMsg = m.quoted;
         const mimeType = quotedMsg ? (quotedMsg.msg || quotedMsg).mimetype || '' : '';
-        const caption = text?.trim() || "";
+        
+        // Parse number limit from beginning of text
+        const { limit: groupLimit, message: actualText } = parseGroupLimit(text);
+        const caption = actualText;
         
         // ==================== CASE 1: MEDIA (IMAGE/VIDEO/AUDIO) ====================
-        // Send to ALL GROUPS using isGroupStatus: true (appears in chat + status)
         if (quotedMsg && mimeType) {
             if (!mimeType.startsWith('image/') && !mimeType.startsWith('video/') && !mimeType.startsWith('audio/')) {
                 return reply("❌ Unsupported! Reply to image, video, or audio.");
@@ -133,15 +147,21 @@ cmd({
             
             // Get all groups first to show count
             const groups = await conn.groupFetchAllParticipating();
-            const totalGroups = Object.keys(groups).length;
+            const allGroupIds = Object.keys(groups);
+            const totalAll = allGroupIds.length;
             
-            if (!totalGroups) return reply("❌ You are not in any groups!");
+            if (!totalAll) return reply("❌ You are not in any groups!");
             
-            await reply(`🚀 Sending ${mimeType.split('/')[0].toUpperCase()} to ${totalGroups} groups...`);
+            // Apply limit if specified
+            const targetGroupIds = groupLimit ? allGroupIds.slice(0, Math.min(groupLimit, totalAll)) : allGroupIds;
+            const total = targetGroupIds.length;
+            
+            const limitMsg = groupLimit ? ` (limited to ${total} group${total !== 1 ? 's' : ''})` : '';
+            await reply(`🚀 Sending ${mimeType.split('/')[0].toUpperCase()} to ${total} groups${limitMsg}...`);
             
             let lastProgress = "";
             
-            const result = await sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, (current, total, success, failed) => {
+            const result = await sendMediaStatusToGroups(conn, targetGroupIds, mediaBuffer, mimeType, caption, (current, total, success, failed) => {
                 const progressMsg = `📊 ${current}/${total} | ✅ ${success} | ❌ ${failed}`;
                 if (progressMsg !== lastProgress) {
                     reply(progressMsg).catch(() => {});
@@ -155,31 +175,35 @@ cmd({
         }
         
         // ==================== CASE 2: TEXT ONLY ====================
-        // Send to ALL GROUPS using V2 (pure status, no chat message)
         const statusText = caption;
         
         if (!statusText) {
-            return reply(`⚠️ Provide text or reply to media!\n\nExamples:\n• .gcstatus Hello everyone (text to ALL groups)\n• Reply to image/video with .gcstatus (media to ALL groups)`);
+            return reply(`⚠️ Provide text or reply to media!\n\nExamples:\n• .gcstatus Hello everyone (text to ALL groups)\n• .gcstatus 5 Hello everyone (text to 5 groups)\n• .gcstatus 10 (text to 10 groups)\n• Reply to image/video with .gcstatus 3 (media to 3 groups)\n\nℹ️ Max group limit is 10.`);
         }
         
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
         
         // Get all groups
         const groups = await conn.groupFetchAllParticipating();
-        const groupIds = Object.keys(groups);
-        const total = groupIds.length;
+        const allGroupIds = Object.keys(groups);
+        const totalAll = allGroupIds.length;
         
-        if (!total) return reply("❌ You are not in any groups!");
+        if (!totalAll) return reply("❌ You are not in any groups!");
         
-        await reply(`🚀 Broadcasting "${statusText}" to ${total} groups (pure status)...`);
+        // Apply limit if specified
+        const targetGroupIds = groupLimit ? allGroupIds.slice(0, Math.min(groupLimit, totalAll)) : allGroupIds;
+        const total = targetGroupIds.length;
+        
+        const limitMsg = groupLimit ? ` (limited to ${total} group${total !== 1 ? 's' : ''})` : '';
+        await reply(`🚀 Broadcasting "${statusText}" to ${total} groups${limitMsg} (pure status)...`);
         
         let success = 0;
         let failed = 0;
         let lastProgress = "";
         
-        for (let i = 0; i < groupIds.length; i++) {
+        for (let i = 0; i < total; i++) {
             try {
-                await relayGroupStatusV2(conn, groupIds[i], statusText);
+                await relayGroupStatusV2(conn, targetGroupIds[i], statusText);
                 success++;
                 
                 if ((i + 1) % 10 === 0) {
@@ -194,7 +218,7 @@ cmd({
                 
             } catch (err) {
                 failed++;
-                console.error(`Failed: ${groupIds[i]}`, err.message);
+                console.error(`Failed: ${targetGroupIds[i]}`, err.message);
             }
         }
         
