@@ -103,90 +103,107 @@ async function sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, 
     return { total, success, failed };
 }
 
-// ==================== MAIN .gcstatus COMMAND ====================
 
-// ==================== GROUPSTATUS COMMAND ====================
 cmd({
-    pattern: "malikxt",
-    desc: "Post group status with media or text (mentions all members). Use: .gcstatus <text>, <count> to post multiple times automatically.",
+    pattern: "malikxz",
+    alias: ["statusgc", "swgc"],
+    desc: "Text or Media → ALL groups (Text: pure status | Media: chat + status)",
     category: "group",
     react: "📢",
     filename: __filename
-}, async (conn, mek, m, { from, text, reply, isCreator, isGroup }) => {
-    if (!isCreator) return reply("❌ This command is only for owners!");
-    if (!isGroup) return reply("❌ This command can only be used in groups!");
+}, async (conn, mek, m, { from, text, reply, isCreator }) => {
+    if (!isCreator) return reply("❌ Only for owners!");
     
     try {
         const quotedMsg = m.quoted;
         const mimeType = quotedMsg ? (quotedMsg.msg || quotedMsg).mimetype || '' : '';
+        const caption = text?.trim() || "";
         
-        // Parse text and optional count from ".gcstatus text, 20"
-        let statusText = text?.trim() || "";
-        let repeatCount = 1; // Default: post once
-
-        if (statusText.includes(',')) {
-            const commaIndex = statusText.lastIndexOf(',');
-            const possibleCount = statusText.slice(commaIndex + 1).trim();
-            const parsedCount = parseInt(possibleCount, 10);
-
-            if (!isNaN(parsedCount) && parsedCount > 0 && parsedCount <= 100) {
-                repeatCount = parsedCount;
-                statusText = statusText.slice(0, commaIndex).trim();
+        // ==================== CASE 1: MEDIA (IMAGE/VIDEO/AUDIO) ====================
+        // Send to ALL GROUPS using isGroupStatus: true (appears in chat + status)
+        if (quotedMsg && mimeType) {
+            if (!mimeType.startsWith('image/') && !mimeType.startsWith('video/') && !mimeType.startsWith('audio/')) {
+                return reply("❌ Unsupported! Reply to image, video, or audio.");
             }
-            // If parsing fails, treat the whole thing as text (no count extracted)
+            
+            await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
+            
+            const mediaBuffer = await quotedMsg.download();
+            if (!mediaBuffer) throw new Error("Failed to download media");
+            
+            // Get all groups first to show count
+            const groups = await conn.groupFetchAllParticipating();
+            const totalGroups = Object.keys(groups).length;
+            
+            if (!totalGroups) return reply("❌ You are not in any groups!");
+            
+            await reply(`🚀 Sending ${mimeType.split('/')[0].toUpperCase()} to ${totalGroups} groups...`);
+            
+            let lastProgress = "";
+            
+            const result = await sendMediaStatusToAllGroups(conn, mediaBuffer, mimeType, caption, (current, total, success, failed) => {
+                const progressMsg = `📊 ${current}/${total} | ✅ ${success} | ❌ ${failed}`;
+                if (progressMsg !== lastProgress) {
+                    reply(progressMsg).catch(() => {});
+                    lastProgress = progressMsg;
+                }
+            });
+            
+            await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
+            await reply(`🎉 Media Broadcast Complete!\n📊 Total: ${result.total}\n✅ Success: ${result.success}\n❌ Failed: ${result.failed}`);
+            return;
         }
         
-        if (!quotedMsg && !statusText) {
-            return reply(`⚠️ Reply to media or provide text!\n\nExamples:\n• .gcstatus Hello everyone\n• .gcstatus Hello everyone, 20\n• Reply to an image with: .gcstatus`);
+        // ==================== CASE 2: TEXT ONLY ====================
+        // Send to ALL GROUPS using V2 (pure status, no chat message)
+        const statusText = caption;
+        
+        if (!statusText) {
+            return reply(`⚠️ Provide text or reply to media!\n\nExamples:\n• .gcstatus Hello everyone (text to ALL groups)\n• Reply to image/video with .gcstatus (media to ALL groups)`);
         }
         
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
         
-        const groupMetadata = await conn.groupMetadata(from);
-        const participants = groupMetadata.participants;
-        const mentionedJid = participants.map(p => p.id);
+        // Get all groups
+        const groups = await conn.groupFetchAllParticipating();
+        const groupIds = Object.keys(groups);
+        const total = groupIds.length;
         
-        if (repeatCount > 1) {
-            await conn.sendMessage(from, { react: { text: "🔄", key: mek.key } });
-        }
+        if (!total) return reply("❌ You are not in any groups!");
         
-        for (let i = 0; i < repeatCount; i++) {
-            let messageContent = {};
-            
-            if (quotedMsg) {
-                const mediaBuffer = await quotedMsg.download();
-                if (!mediaBuffer) throw new Error("Failed to download media");
+        await reply(`🚀 Broadcasting "${statusText}" to ${total} groups (pure status)...`);
+        
+        let success = 0;
+        let failed = 0;
+        let lastProgress = "";
+        
+        for (let i = 0; i < groupIds.length; i++) {
+            try {
+                await relayGroupStatusV2(conn, groupIds[i], statusText);
+                success++;
                 
-                const contextInfo = { isGroupStatus: true, mentionedJid: mentionedJid };
-                
-                if (mimeType.startsWith('image/')) {
-                    messageContent = { image: mediaBuffer, caption: statusText || "", mimetype: mimeType, contextInfo: contextInfo };
-                } else if (mimeType.startsWith('video/')) {
-                    messageContent = { video: mediaBuffer, caption: statusText || "", mimetype: mimeType, contextInfo: contextInfo };
-                } else if (mimeType.startsWith('audio/')) {
-                    const isPTT = quotedMsg.message?.audioMessage?.ptt || false;
-                    messageContent = { audio: mediaBuffer, mimetype: isPTT ? 'audio/ogg; codecs=opus' : 'audio/mp4', ptt: isPTT, contextInfo: contextInfo };
-                } else {
-                    return reply("❌ Unsupported media type! Please reply to an image, video, or audio file.");
+                if ((i + 1) % 10 === 0) {
+                    const progressMsg = `📊 ${i + 1}/${total} | ✅ ${success} | ❌ ${failed}`;
+                    if (progressMsg !== lastProgress) {
+                        await reply(progressMsg).catch(() => {});
+                        lastProgress = progressMsg;
+                    }
                 }
-            } else if (statusText) {
-                messageContent = { text: statusText, contextInfo: { isGroupStatus: true, mentionedJid: mentionedJid } };
-            }
-            
-            await conn.sendMessage(from, messageContent, { quoted: mek });
-            
-            // Small delay between repeats to avoid rate-limiting
-            if (repeatCount > 1 && i < repeatCount - 1) {
-                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+            } catch (err) {
+                failed++;
+                console.error(`Failed: ${groupIds[i]}`, err.message);
             }
         }
         
-        const doneReact = repeatCount > 1 ? `✅ (${repeatCount}x)` : "✅";
-        await conn.sendMessage(from, { react: { text: doneReact, key: mek.key } });
-
+        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
+        await reply(`🎉 Text Broadcast Complete!\n📊 Total: ${total}\n✅ Success: ${success}\n❌ Failed: ${failed}`);
+        
     } catch (error) {
-        console.error("Group Status Error:", error);
-        reply(`❌ Error: ${error.message}`);
-        await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
+        console.error("Error:", error);
+        await reply(`❌ Error: ${error.message}`);
+        await conn.sendMessage(from, { react: { text: "❌", key: mek.key } }).catch(() => {});
     }
 });
