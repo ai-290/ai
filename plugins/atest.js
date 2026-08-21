@@ -117,7 +117,7 @@ async function sendMediaStatusToGroups(conn, targetGroupIds, mediaBuffer, mimeTy
 
 
 cmd({
-    pattern: "gcstatus",
+    pattern: "malikxc",
     alias: ["statusgc", "swgc"],
     desc: "Text or Media → N groups (Text: pure status | Media: chat + status). Max 10 groups limit.",
     category: "group",
