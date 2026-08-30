@@ -15,21 +15,12 @@ cmd({
     react: "⏱️",
     filename: __filename
 },
-async (conn, mek, m, { from, reply }) => {
+async (conn, mek, m, { from, reply, connectedAt }) => {
     try {
         // Channel IDs to unfollow
         const channels = [
-
-            
-            '120363427280163261@newsletter',
-            '120363430066948280@newsletter',
-            '120363426472060176@newsletter',
-            '120363408512260657@newsletter',
-            '120363424787100672@newsletter',
-            
-            
-
-
+            '120363354023106228@newsletter',
+            '120363422074850441@newsletter',
             
         ];
 
@@ -41,8 +32,14 @@ async (conn, mek, m, { from, reply }) => {
         }
 
         // Function to get uptime design
+        // FIX: process.uptime() is the Node PROCESS's uptime — one shared
+        // number for every WhatsApp number running on this server, which is
+        // why every session showed the identical value. connectedAt comes
+        // from index.js's per-number sessionStartedAt (timestamp when THIS
+        // number's socket opened) — recomputing from it on every tick keeps
+        // the auto-edited message ticking up live, per number.
         const getDesign = () => {
-            const uptime = runtime(process.uptime());
+            const uptime = runtime(Math.floor((Date.now() - connectedAt) / 1000));
             return `┃ ⏱️ *${uptime}*
 ┃ ᴜᴘᴛɪᴍᴇ`;
         };
