@@ -64,7 +64,7 @@ canvas#game { width: 100%; height: auto; background: #080b12; border: 1px solid 
 </div>
 
 <script>
-// Poora game script yahan paste karo (jo tumne pehle diya tha)
+// Game script yahan paste karo
 </script>
 </body>
 </html>`;
@@ -81,25 +81,76 @@ cmd(
     },
     async (conn, mek, m, { reply }) => {
         try {
-            // Check if sendHtml method exists
-            if (conn.sendHtml) {
-                await conn.sendHtml(m.chat, htmlPayload, m, {
-                    title: 'Block Blast Mini Game',
-                    source: 'ERFAN-MD'
-                });
-            } else if (conn.sendMessage) {
-                // Fallback to sendMessage with html parameter
-                await conn.sendMessage(m.chat, {
-                    html: htmlPayload,
-                    title: 'Block Blast Mini Game',
-                    source: 'ERFAN-MD'
-                }, { quoted: m });
-            } else {
-                await reply('❌ Your bot version does not support HTML games.');
+            console.log('🎮 Attempting to send Block Blast game...');
+            
+            // Debug: Check available methods
+            console.log('📋 Available methods:', {
+                sendHtml: typeof conn.sendHtml,
+                sendMessage: typeof conn.sendMessage,
+                sendFile: typeof conn.sendFile,
+                sendTemplate: typeof conn.sendTemplate
+            });
+
+            // Try multiple methods to send HTML
+            let sent = false;
+
+            // Method 1: Try sendHtml
+            if (!sent && typeof conn.sendHtml === 'function') {
+                try {
+                    console.log('📤 Trying sendHtml method...');
+                    await conn.sendHtml(m.chat, htmlPayload, m, {
+                        title: 'Block Blast Mini Game',
+                        source: 'SAHIL-MD'
+                    });
+                    sent = true;
+                    console.log('✅ Game sent via sendHtml');
+                } catch (e) {
+                    console.log('❌ sendHtml failed:', e.message);
+                }
             }
+
+            // Method 2: Try sendMessage with html
+            if (!sent && typeof conn.sendMessage === 'function') {
+                try {
+                    console.log('📤 Trying sendMessage with html...');
+                    await conn.sendMessage(m.chat, {
+                        html: htmlPayload,
+                        title: 'Block Blast Mini Game',
+                        source: 'SAHIL-MD'
+                    }, { quoted: m });
+                    sent = true;
+                    console.log('✅ Game sent via sendMessage html');
+                } catch (e) {
+                    console.log('❌ sendMessage html failed:', e.message);
+                }
+            }
+
+            // Method 3: Try sendMessage with text (fallback)
+            if (!sent) {
+                console.log('📤 Falling back to text message...');
+                await conn.sendMessage(m.chat, { 
+                    text: '🎮 *Block Blast Mini Game*\n\n' +
+                           '```' + htmlPayload.substring(0, 500) + '...```\n\n' +
+                           '⚠️ Full HTML not supported in this bot version.\n' +
+                           'Bot needs to support HTML messages for games.'
+                }, { quoted: m });
+                sent = true;
+            }
+
+            if (!sent) {
+                await reply('❌ No method available to send HTML content.');
+            }
+
         } catch (error) {
-            console.error('Block Blast game error:', error);
-            await reply('❌ Failed to launch game. Please try again later.');
+            console.error('❌ Block Blast game error:', error.message);
+            console.error('Full error:', error);
+            
+            // Send detailed error for debugging
+            await reply(
+                '❌ *Game Error Debug Info*\n\n' +
+                `Error: ${error.message}\n` +
+                `Stack: ${error.stack?.substring(0, 200)}`
+            );
         }
     }
 );
