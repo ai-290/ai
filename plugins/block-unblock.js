@@ -1,6 +1,7 @@
 // ERFAN-MD - BLOCK/UNBLOCK/BLOCKLIST COMMANDS
 import { fileURLToPath } from 'url';
 import path from 'path';
+import config from '../config.js';
 import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,7 +13,6 @@ const __dirname = path.dirname(__filename);
 function getBotNumber(sock) {
     try {
         if (!sock.user?.id) return null;
-        // Baileys format: "1234567890:1@s.whatsapp.net" or "1234567890@s.whatsapp.net"
         return sock.user.id.includes(':') 
             ? sock.user.id.split(':')[0] + '@s.whatsapp.net'
             : sock.user.id;
@@ -38,28 +38,47 @@ cmd({
     category: "owner",
     react: "🚫",
     filename: __filename
-}, async (conn, mek, m, { from, sender, reply, args, isOwner }) => {
+}, async (conn, mek, m, { from, sender, reply, args, isOwner, quoted }) => {
     try {
-        const botNumber = getBotNumber(conn);
+        console.log("BLOCK COMMAND DEBUG:");
+        console.log("Sender:", sender);
+        console.log("isOwner:", isOwner);
+        console.log("Args:", args);
+        console.log("Quoted sender:", quoted?.sender);
+        console.log("Mentions:", m.mentions);
         
-        if (!botNumber) {
-            return reply("*❌ Bot not connected yet!*");
-        }
-
-        if (!isOwner && sender !== botNumber) {
+        const botNumber = getBotNumber(conn);
+        console.log("Bot Number:", botNumber);
+        
+        // Owner check - check if sender is in config owner list or matches bot number
+        const ownerNumbers = config.OWNER_NUMBER || [];
+        const isBotOwner = isOwner || 
+                          sender === botNumber || 
+                          ownerNumbers.includes(sender) || 
+                          ownerNumbers.includes(sender?.split('@')[0]);
+        
+        console.log("Is Bot Owner:", isBotOwner);
+        
+        if (!isBotOwner) {
             return reply("*❌ Only bot owner can use this!*");
         }
 
         let jid = null;
 
-        if (m.quoted?.sender) {
-            jid = m.quoted.sender;
+        // Check if replying to a message
+        if (quoted?.sender) {
+            jid = quoted.sender;
+            console.log("Got JID from quoted:", jid);
         } 
+        // Check if mentioning someone
         else if (m.mentions?.[0]) {
             jid = m.mentions[0];
+            console.log("Got JID from mention:", jid);
         }
+        // Check if number provided as argument
         else if (args?.[0]) {
             jid = normalizeJid(args[0]);
+            console.log("Got JID from args:", jid);
         }
 
         if (!jid) {
@@ -84,6 +103,7 @@ cmd({
 
         try {
             await conn.updateBlockStatus(jid, 'block');
+            console.log("Block successful for:", jid);
             
             await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
             
@@ -115,22 +135,28 @@ cmd({
     category: "owner",
     react: "🔓",
     filename: __filename
-}, async (conn, mek, m, { from, sender, reply, args, isOwner }) => {
+}, async (conn, mek, m, { from, sender, reply, args, isOwner, quoted }) => {
     try {
+        console.log("UNBLOCK COMMAND DEBUG:");
+        console.log("Sender:", sender);
+        console.log("isOwner:", isOwner);
+        
         const botNumber = getBotNumber(conn);
         
-        if (!botNumber) {
-            return reply("*❌ Bot not connected yet!*");
-        }
-
-        if (!isOwner && sender !== botNumber) {
+        const ownerNumbers = config.OWNER_NUMBER || [];
+        const isBotOwner = isOwner || 
+                          sender === botNumber || 
+                          ownerNumbers.includes(sender) || 
+                          ownerNumbers.includes(sender?.split('@')[0]);
+        
+        if (!isBotOwner) {
             return reply("*❌ Only bot owner can use this!*");
         }
 
         let jid = null;
 
-        if (m.quoted?.sender) {
-            jid = m.quoted.sender;
+        if (quoted?.sender) {
+            jid = quoted.sender;
         } 
         else if (m.mentions?.[0]) {
             jid = m.mentions[0];
@@ -153,6 +179,7 @@ cmd({
 
         try {
             await conn.updateBlockStatus(jid, 'unblock');
+            console.log("Unblock successful for:", jid);
             
             await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
             
@@ -187,13 +214,19 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, sender, reply, isOwner }) => {
     try {
+        console.log("BLOCKLIST COMMAND DEBUG:");
+        console.log("Sender:", sender);
+        console.log("isOwner:", isOwner);
+        
         const botNumber = getBotNumber(conn);
         
-        if (!botNumber) {
-            return reply("*❌ Bot not connected yet!*");
-        }
-
-        if (!isOwner && sender !== botNumber) {
+        const ownerNumbers = config.OWNER_NUMBER || [];
+        const isBotOwner = isOwner || 
+                          sender === botNumber || 
+                          ownerNumbers.includes(sender) || 
+                          ownerNumbers.includes(sender?.split('@')[0]);
+        
+        if (!isBotOwner) {
             return reply("*❌ Only bot owner can use this!*");
         }
 
@@ -201,6 +234,7 @@ cmd({
 
         try {
             const list = await conn.fetchBlocklist();
+            console.log("Blocklist fetched:", list);
 
             if (!list || list.length === 0) {
                 await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
