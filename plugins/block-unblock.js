@@ -33,7 +33,7 @@ function normalizeJid(input) {
 // BLOCK COMMAND
 // ============================================
 cmd({
-    pattern: "blocka",
+    pattern: "xff",
     desc: "Block a user",
     category: "owner",
     react: "🚫",
