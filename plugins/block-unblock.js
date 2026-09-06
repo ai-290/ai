@@ -38,58 +38,71 @@ cmd({
     category: "owner",
     react: "🚫",
     filename: __filename
-}, async (sock, mek, m, { reply, quoted, args, react }) => {
-
-    const botNumber = getBotNumber(sock);
-    console.log("DEBUG - Bot Number:", botNumber);
-    console.log("DEBUG - Sender:", mek.sender);
-
-    if (!botNumber) {
-        await react("❌");
-        return reply("*❌ Bot not connected yet!*");
-    }
-
-    if (mek.sender !== botNumber) {
-        await react("❌");
-        return reply("*❌ Only bot owner can use this!*");
-    }
-
-    let jid = null;
-
-    if (quoted?.sender) {
-        jid = quoted.sender;
-    } else if (m?.mentionedJid?.[0]) {
-        jid = m.mentionedJid[0];
-    } else if (args?.[0]) {
-        jid = normalizeJid(args[0]);
-    }
-
-    if (!jid) {
-        await react("❌");
-        return reply(
-            "*🚫 Block User*\n\n" +
-            "*Usage:*\n" +
-            "• Reply to message: `.block`\n" +
-            "• Mention: `.block @user`\n" +
-            "• Number: `.block 923001234567`"
-        );
-    }
-
-    if (jid === botNumber || jid === mek.sender) {
-        await react("❌");
-        return reply("*❌ You can't block yourself!*");
-    }
-
+}, async (conn, mek, m, { from, sender, reply, args, isOwner }) => {
     try {
-        await sock.updateBlockStatus(jid, 'block');
-        await react("✅");
-        await reply(`*🚫 Blocked!*\n\n@${jid.split('@')[0]} has been blocked.`, {
-            mentions: [jid]
-        });
+        const botNumber = getBotNumber(conn);
+        
+        if (!botNumber) {
+            return reply("*❌ Bot not connected yet!*");
+        }
+
+        if (!isOwner && sender !== botNumber) {
+            return reply("*❌ Only bot owner can use this!*");
+        }
+
+        let jid = null;
+
+        if (m.quoted?.sender) {
+            jid = m.quoted.sender;
+        } 
+        else if (m.mentions?.[0]) {
+            jid = m.mentions[0];
+        }
+        else if (args?.[0]) {
+            jid = normalizeJid(args[0]);
+        }
+
+        if (!jid) {
+            return reply(
+                "*🚫 Block User*\n\n" +
+                "*Usage:*\n" +
+                "• Reply to message: `.block`\n" +
+                "• Mention: `.block @user`\n" +
+                "• Number: `.block 923001234567`"
+            );
+        }
+
+        if (jid === botNumber) {
+            return reply("*❌ You can't block the bot itself!*");
+        }
+
+        if (jid === sender) {
+            return reply("*❌ You can't block yourself!*");
+        }
+
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+
+        try {
+            await conn.updateBlockStatus(jid, 'block');
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            
+            const blockMsg = `*🚫 Blocked!*\n\n@${jid.split('@')[0]} has been blocked.\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`;
+            
+            await conn.sendMessage(from, { 
+                text: blockMsg,
+                mentions: [jid]
+            }, { quoted: mek });
+            
+        } catch (error) {
+            console.error("Block Error:", error);
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            await reply(`*❌ Failed to block!*\n\n_${error.message || error}_`);
+        }
+        
     } catch (error) {
-        console.error("Block Error:", error);
-        await react("❌");
-        await reply(`*❌ Failed to block!*\n\n_${error.message || error}_`);
+        console.error("Block Command Error:", error);
+        reply(`*❌ Command error!*\n\n_${error.message}_`);
     }
 });
 
@@ -102,51 +115,63 @@ cmd({
     category: "owner",
     react: "🔓",
     filename: __filename
-}, async (sock, mek, m, { reply, quoted, args, react }) => {
-
-    const botNumber = getBotNumber(sock);
-
-    if (!botNumber) {
-        await react("❌");
-        return reply("*❌ Bot not connected yet!*");
-    }
-
-    if (mek.sender !== botNumber) {
-        await react("❌");
-        return reply("*❌ Only bot owner can use this!*");
-    }
-
-    let jid = null;
-
-    if (quoted?.sender) {
-        jid = quoted.sender;
-    } else if (m?.mentionedJid?.[0]) {
-        jid = m.mentionedJid[0];
-    } else if (args?.[0]) {
-        jid = normalizeJid(args[0]);
-    }
-
-    if (!jid) {
-        await react("❌");
-        return reply(
-            "*🔓 Unblock User*\n\n" +
-            "*Usage:*\n" +
-            "• Reply to message: `.unblock`\n" +
-            "• Mention: `.unblock @user`\n" +
-            "• Number: `.unblock 923001234567`"
-        );
-    }
-
+}, async (conn, mek, m, { from, sender, reply, args, isOwner }) => {
     try {
-        await sock.updateBlockStatus(jid, 'unblock');
-        await react("✅");
-        await reply(`*🔓 Unblocked!*\n\n@${jid.split('@')[0]} has been unblocked.`, {
-            mentions: [jid]
-        });
+        const botNumber = getBotNumber(conn);
+        
+        if (!botNumber) {
+            return reply("*❌ Bot not connected yet!*");
+        }
+
+        if (!isOwner && sender !== botNumber) {
+            return reply("*❌ Only bot owner can use this!*");
+        }
+
+        let jid = null;
+
+        if (m.quoted?.sender) {
+            jid = m.quoted.sender;
+        } 
+        else if (m.mentions?.[0]) {
+            jid = m.mentions[0];
+        }
+        else if (args?.[0]) {
+            jid = normalizeJid(args[0]);
+        }
+
+        if (!jid) {
+            return reply(
+                "*🔓 Unblock User*\n\n" +
+                "*Usage:*\n" +
+                "• Reply to message: `.unblock`\n" +
+                "• Mention: `.unblock @user`\n" +
+                "• Number: `.unblock 923001234567`"
+            );
+        }
+
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+
+        try {
+            await conn.updateBlockStatus(jid, 'unblock');
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            
+            const unblockMsg = `*🔓 Unblocked!*\n\n@${jid.split('@')[0]} has been unblocked.\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`;
+            
+            await conn.sendMessage(from, { 
+                text: unblockMsg,
+                mentions: [jid]
+            }, { quoted: mek });
+            
+        } catch (error) {
+            console.error("Unblock Error:", error);
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            await reply(`*❌ Failed to unblock!*\n\n_${error.message || error}_`);
+        }
+        
     } catch (error) {
-        console.error("Unblock Error:", error);
-        await react("❌");
-        await reply(`*❌ Failed to unblock!*\n\n_${error.message || error}_`);
+        console.error("Unblock Command Error:", error);
+        reply(`*❌ Command error!*\n\n_${error.message}_`);
     }
 });
 
@@ -155,44 +180,54 @@ cmd({
 // ============================================
 cmd({
     pattern: "blocklist",
-    alias: ["listblock", "blocked"],
+    alias: ["listblock", "blocked", "blocks"],
     desc: "Show blocked users",
     category: "owner",
     react: "📋",
     filename: __filename
-}, async (sock, mek, m, { reply, react }) => {
-
-    const botNumber = getBotNumber(sock);
-
-    if (!botNumber) {
-        await react("❌");
-        return reply("*❌ Bot not connected yet!*");
-    }
-
-    if (mek.sender !== botNumber) {
-        await react("❌");
-        return reply("*❌ Only bot owner can use this!*");
-    }
-
+}, async (conn, mek, m, { from, sender, reply, isOwner }) => {
     try {
-        const list = await sock.fetchBlocklist();
-
-        if (!list || list.length === 0) {
-            await react("✅");
-            return reply("*📋 Blocked List*\n\n_No users blocked._");
+        const botNumber = getBotNumber(conn);
+        
+        if (!botNumber) {
+            return reply("*❌ Bot not connected yet!*");
         }
 
-        let text = `*📋 Blocked Users: ${list.length}*\n\n`;
-        list.forEach((jid, i) => {
-            text += `${i + 1}. @${jid.split('@')[0]}\n`;
-        });
+        if (!isOwner && sender !== botNumber) {
+            return reply("*❌ Only bot owner can use this!*");
+        }
 
-        await react("✅");
-        await reply(text, { mentions: list });
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
+        try {
+            const list = await conn.fetchBlocklist();
+
+            if (!list || list.length === 0) {
+                await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+                return reply("*📋 Blocked List*\n\n_No users blocked._");
+            }
+
+            let text = `*📋 Blocked Users: ${list.length}*\n\n`;
+            list.forEach((jid, i) => {
+                text += `${i + 1}. @${jid.split('@')[0]}\n`;
+            });
+            text += `\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`;
+
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            
+            await conn.sendMessage(from, { 
+                text: text,
+                mentions: list
+            }, { quoted: mek });
+
+        } catch (error) {
+            console.error("Blocklist Error:", error);
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            await reply(`*❌ Failed to fetch blocklist!*\n\n_${error.message || error}_`);
+        }
+        
     } catch (error) {
-        console.error("Blocklist Error:", error);
-        await react("❌");
-        await reply(`*❌ Failed!*\n\n_${error.message || error}_`);
+        console.error("Blocklist Command Error:", error);
+        reply(`*❌ Command error!*\n\n_${error.message}_`);
     }
 });
