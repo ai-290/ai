@@ -1,154 +1,272 @@
-import axios from 'axios';
-import FormData from 'form-data';
-import fs from 'fs';
-import path from 'path';
+// ERFAN-MD - BROADCAST & STATUS COMMANDS
 import { fileURLToPath } from 'url';
-import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import path from 'path';
 import { cmd } from '../command.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ============================================
+// SEND BROADCAST COMMAND
+// ============================================
 cmd({
-    pattern: "rembgx",
-    alias: ["removebg", "bgremove", "nobg", "rbg"],
-    use: '.rembg (reply to an image)',
-    desc: "Remove background from image using remove.bg API",
-    category: "media",
-    react: "🎨",
+    pattern: "broadcast",
+    alias: ["bcast", "bclist"],
+    desc: "Send message to broadcast list",
+    category: "owner",
+    react: "📢",
     filename: __filename
-},
-async (conn, mek, m, { from, quoted, sender, reply, isMedia }) => {
+}, async (conn, mek, m, { from, sender, reply, args, isOwner, quoted }) => {
     try {
-        // Check if the command is used as reply to an image
-        if (!m.quoted) {
-            return reply('❌ *Please reply to an image!*\n\n> *Usage:* Reply to an image with .rembg');
-        }
-
-        // Get the quoted message
-        const quotedMessage = m.quoted.message;
+        console.log("=== BROADCAST COMMAND CALLED ===");
         
-        // Try multiple ways to get the image message
-        let imageMessage = null;
-        
-        // Check if it's a direct image message
-        if (quotedMessage.imageMessage) {
-            imageMessage = quotedMessage.imageMessage;
-        }
-        // Check if it's a view once message
-        else if (quotedMessage.viewOnceMessage?.message?.imageMessage) {
-            imageMessage = quotedMessage.viewOnceMessage.message.imageMessage;
-        }
-        else if (quotedMessage.viewOnceMessageV2?.message?.imageMessage) {
-            imageMessage = quotedMessage.viewOnceMessageV2.message.imageMessage;
-        }
-        // Check if it's an ephemeral message
-        else if (quotedMessage.ephemeralMessage?.message?.imageMessage) {
-            imageMessage = quotedMessage.ephemeralMessage.message.imageMessage;
-        }
-        // Check if it's a document with image
-        else if (quotedMessage.documentMessage?.mimetype?.startsWith('image/')) {
-            imageMessage = quotedMessage.documentMessage;
+        // Owner check
+        const botNumber = conn.user?.id?.includes(':') 
+            ? conn.user.id.split(':')[0] + '@s.whatsapp.net'
+            : conn.user?.id;
+            
+        if (!isOwner && sender !== botNumber) {
+            return reply("*❌ Only bot owner can use this!*");
         }
         
-        // Check if the current message itself has image (in case of caption)
-        if (!imageMessage && m.message?.imageMessage) {
-            imageMessage = m.message.imageMessage;
-        }
-        if (!imageMessage && m.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage) {
-            imageMessage = m.message.extendedTextMessage.contextInfo.quotedMessage.imageMessage;
-        }
-        
-        // If still no image found
-        if (!imageMessage) {
-            return reply('❌ *That is not an image!*\n\n> Please reply to an actual image.');
-        }
-
-        // Send loading reaction
-        await conn.sendMessage(from, {
-            react: { text: '⏳', key: mek.key }
-        });
-
-        let tempFile = null;
-        
-        try {
-            // Download the image
-            const buffer = await downloadMediaMessage(
-                { message: { imageMessage } }, 
-                'buffer', 
-                {}, 
-                { logger: console }
+        // Check if broadcast ID provided
+        if (!args[0]) {
+            return reply(
+                "*📢 Broadcast Command*\n\n" +
+                "*Usage:*\n" +
+                "• `.broadcast <broadcast_id> <message>`\n" +
+                "• `.broadcast 12345678@broadcast Hello everyone!`\n" +
+                "• Reply to image: `.broadcast <broadcast_id>`\n\n" +
+                "*Example:*\n" +
+                "`.broadcast 12345678@broadcast Assalam o Alaikum`"
             );
-            
-            if (!buffer) throw new Error('Failed to download image');
-
-            // Create temp directory if not exists
-            const tempDir = path.join(process.cwd(), 'temp');
-            if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
-            }
-            
-            tempFile = path.join(tempDir, `rembg_${Date.now()}.jpg`);
-            fs.writeFileSync(tempFile, buffer);
-
-            // Send to remove.bg API
-            const form = new FormData();
-            form.append('image_file', fs.createReadStream(tempFile));
-            form.append('size', 'auto');
-
-            const apiKey = '8TdrbitPfoV1JEPnKpCrWBhB'; // Your API key
-
-            const response = await axios.post('https://api.remove.bg/v1.0/removebg', form, {
-                headers: {
-                    ...form.getHeaders(),
-                    'X-Api-Key': apiKey
-                },
-                responseType: 'arraybuffer',
-                timeout: 30000,
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity
-            });
-
-            // Send processed image
-            await conn.sendMessage(from, { 
-                image: response.data,
-                caption: '> *✅ Background removed successfully!*',
-                contextInfo: {
-                    mentionedJid: [sender],
-                    forwardingScore: 999,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '120363416743041101@newsletter',
-                        newsletterName: "𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟",
-                        serverMessageId: 143
-                    }
-                }
-            }, { quoted: mek });
-
-            // Success reaction
-            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
-
-        } catch (err) {
-            console.error('REMBG ERROR:', err.message);
-            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-            
-            // Check for specific API errors
-            if (err.response?.status === 402) {
-                reply('❌ *API key limit reached!*\n\n> Your remove.bg API key has reached its monthly limit.');
-            } else if (err.response?.status === 400) {
-                reply('❌ *Invalid image file!*\n\n> Please make sure you are replying to a valid image.');
-            } else {
-                reply(`❌ *Background removal failed!*\n\n> Error: ${err.message}`);
-            }
-        } finally {
-            // Clean up temp file
-            if (tempFile && fs.existsSync(tempFile)) {
-                try { fs.unlinkSync(tempFile); } catch (e) {}
-            }
         }
+        
+        const broadcastId = args[0];
+        const messageText = args.slice(1).join(' ');
+        
+        // Validate broadcast ID
+        if (!broadcastId.endsWith('@broadcast')) {
+            return reply("*❌ Invalid broadcast ID!*\n\n*Format:* `12345678@broadcast`");
+        }
+        
+        // Send loading reaction
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+        
+        // Check if replying to an image/video
+        if (m.quoted?.message?.imageMessage) {
+            // Send image broadcast
+            const imageBuffer = await conn.downloadMediaMessage(m.quoted);
+            
+            await conn.sendMessage(broadcastId, {
+                image: imageBuffer,
+                caption: messageText || m.quoted.message.imageMessage.caption || ''
+            }, {
+                broadcast: true
+            });
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            return reply(`*✅ Broadcast sent!*\n\n📢 *To:* ${broadcastId}\n📸 *Type:* Image\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`);
+        }
+        else if (m.quoted?.message?.videoMessage) {
+            // Send video broadcast
+            const videoBuffer = await conn.downloadMediaMessage(m.quoted);
+            
+            await conn.sendMessage(broadcastId, {
+                video: videoBuffer,
+                caption: messageText || m.quoted.message.videoMessage.caption || ''
+            }, {
+                broadcast: true
+            });
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            return reply(`*✅ Broadcast sent!*\n\n📢 *To:* ${broadcastId}\n🎥 *Type:* Video\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`);
+        }
+        else if (messageText) {
+            // Send text broadcast
+            await conn.sendMessage(broadcastId, {
+                text: messageText
+            }, {
+                broadcast: true
+            });
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            return reply(`*✅ Broadcast sent!*\n\n📢 *To:* ${broadcastId}\n📝 *Type:* Text\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`);
+        }
+        else {
+            return reply("*❌ Please provide message text or reply to an image/video!*");
+        }
+        
+    } catch (error) {
+        console.error("Broadcast Error:", error);
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+        await reply(`*❌ Broadcast failed!*\n\n_${error.message}_`);
+    }
+});
 
-    } catch (err) {
-        console.error('REMBG COMMAND ERROR:', err);
-        reply(`❌ *Command error!*\n\n> ${err.message}`);
+// ============================================
+// BROADCAST LIST INFO COMMAND
+// ============================================
+cmd({
+    pattern: "broadcastinfo",
+    alias: ["bcinfo", "bclistinfo"],
+    desc: "Get broadcast list info",
+    category: "owner",
+    react: "📋",
+    filename: __filename
+}, async (conn, mek, m, { from, sender, reply, args, isOwner }) => {
+    try {
+        console.log("=== BROADCAST INFO COMMAND CALLED ===");
+        
+        const botNumber = conn.user?.id?.includes(':') 
+            ? conn.user.id.split(':')[0] + '@s.whatsapp.net'
+            : conn.user?.id;
+            
+        if (!isOwner && sender !== botNumber) {
+            return reply("*❌ Only bot owner can use this!*");
+        }
+        
+        if (!args[0]) {
+            return reply("*📋 Broadcast Info*\n\n*Usage:* `.broadcastinfo <broadcast_id>`\n*Example:* `.broadcastinfo 12345678@broadcast`");
+        }
+        
+        const broadcastId = args[0];
+        
+        if (!broadcastId.endsWith('@broadcast')) {
+            return reply("*❌ Invalid broadcast ID!*\n\n*Format:* `12345678@broadcast`");
+        }
+        
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+        
+        const bList = await conn.getBroadcastListInfo(broadcastId);
+        
+        if (!bList) {
+            return reply("*❌ Broadcast list not found!*");
+        }
+        
+        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+        
+        let infoMsg = `*📋 Broadcast List Info*\n\n`;
+        infoMsg += `📢 *Name:* ${bList.name || 'N/A'}\n`;
+        infoMsg += `🆔 *ID:* ${broadcastId}\n`;
+        infoMsg += `👥 *Recipients:* ${bList.recipients?.length || 0}\n\n`;
+        
+        if (bList.recipients?.length > 0) {
+            infoMsg += `*Recipients List:*\n`;
+            bList.recipients.forEach((jid, i) => {
+                infoMsg += `${i + 1}. @${jid.split('@')[0]}\n`;
+            });
+        }
+        
+        infoMsg += `\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`;
+        
+        await conn.sendMessage(from, { 
+            text: infoMsg,
+            mentions: bList.recipients || []
+        }, { quoted: mek });
+        
+    } catch (error) {
+        console.error("Broadcast Info Error:", error);
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+        await reply(`*❌ Failed to get info!*\n\n_${error.message}_`);
+    }
+});
+
+// ============================================
+// SEND STATUS/STORY COMMAND
+// ============================================
+cmd({
+    pattern: "sx",
+    alias: ["story", "poststatus"],
+    desc: "Post a status/story",
+    category: "owner",
+    react: "📱",
+    filename: __filename
+}, async (conn, mek, m, { from, sender, reply, args, isOwner, quoted }) => {
+    try {
+        console.log("=== STATUS COMMAND CALLED ===");
+        
+        const botNumber = conn.user?.id?.includes(':') 
+            ? conn.user.id.split(':')[0] + '@s.whatsapp.net'
+            : conn.user?.id;
+            
+        if (!isOwner && sender !== botNumber) {
+            return reply("*❌ Only bot owner can use this!*");
+        }
+        
+        const statusJid = 'status@broadcast';
+        
+        // Check for image status
+        if (m.quoted?.message?.imageMessage) {
+            await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+            
+            const imageBuffer = await conn.downloadMediaMessage(m.quoted);
+            const caption = args.join(' ') || m.quoted.message.imageMessage.caption || '';
+            
+            await conn.sendMessage(statusJid, {
+                image: imageBuffer,
+                caption: caption
+            }, {
+                backgroundColor: '#000000',
+                font: 1,
+                statusJidList: [],
+                broadcast: true
+            });
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            return reply(`*✅ Status posted!*\n\n📸 *Type:* Image\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`);
+        }
+        // Check for video status
+        else if (m.quoted?.message?.videoMessage) {
+            await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+            
+            const videoBuffer = await conn.downloadMediaMessage(m.quoted);
+            const caption = args.join(' ') || m.quoted.message.videoMessage.caption || '';
+            
+            await conn.sendMessage(statusJid, {
+                video: videoBuffer,
+                caption: caption
+            }, {
+                backgroundColor: '#000000',
+                font: 1,
+                statusJidList: [],
+                broadcast: true
+            });
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            return reply(`*✅ Status posted!*\n\n🎥 *Type:* Video\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`);
+        }
+        // Text status
+        else if (args.length > 0) {
+            await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+            
+            const statusText = args.join(' ');
+            
+            await conn.sendMessage(statusJid, {
+                text: statusText
+            }, {
+                backgroundColor: '#000000',
+                font: 1,
+                statusJidList: [],
+                broadcast: true
+            });
+            
+            await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            return reply(`*✅ Status posted!*\n\n📝 *Type:* Text\n\n> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`);
+        }
+        else {
+            return reply(
+                "*📱 Status Command*\n\n" +
+                "*Usage:*\n" +
+                "• Reply to image: `.status`\n" +
+                "• Reply to video: `.status`\n" +
+                "• Text status: `.status Your status text here`"
+            );
+        }
+        
+    } catch (error) {
+        console.error("Status Error:", error);
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+        await reply(`*❌ Status failed!*\n\n_${error.message}_`);
     }
 });
