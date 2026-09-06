@@ -145,7 +145,7 @@ cmd({
 │ • &6+9    → Use servers 6 to 9
 │
 │ *Examples (with default emojis ❤️,👍,🔥):*
-│ 1. .chreact https://whatsapp.com/channel/0029VbC15ycFHWpubqmNWe0N
+│ 1. .chreact https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
 │ 2. .chreact link #1/2/3
 │ 3. .chreact link &5
 │ 4. .chreact link &6+9
@@ -175,7 +175,7 @@ cmd({
 │ https://whatsapp.com/channel/CHANNEL_ID/POST_ID
 │
 │ *Example:*
-│ https://whatsapp.com/channel/0029VbC15ycFHWpubqmNWe0N
+│ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
 │
 │ *Invalid Examples:*
 │ ❌ whatsapp.com/channel/xxx (missing post ID)
@@ -209,7 +209,7 @@ cmd({
 │ https://whatsapp.com/channel/CHANNEL_ID/POST_ID
 │
 │ *Example:*
-│ https://whatsapp.com/channel/0029VbC15ycFHWpubqmNWe0N
+│ https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J
 │
 │ *Note:* Make sure the URL contains both channel ID and post ID
 ╰─────────────────`);
@@ -253,20 +253,20 @@ cmd({
             return reply(validation.error);
         }
         
-        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
         
-        // Fetch servers from main API
-        const serversResponse = await axios.get(`${WebUrl}/servers`, { timeout: 10000 });
+        // Fetch servers from main API with shorter timeout
+        const serversResponse = await axios.get(`${WebUrl}/servers`, { timeout: 5000 });
         
         if (!serversResponse.data || !serversResponse.data.servers) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
             return reply("❌ *Failed to fetch server list!*");
         }
         
         const servers = serversResponse.data.servers;
         
         if (servers.length === 0) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
             return reply("❌ *No servers found!*");
         }
         
@@ -274,7 +274,7 @@ cmd({
         const selectedServers = getSelectedServers(servers, selection);
         
         if (selectedServers.length === 0) {
-            await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
             return reply(`❌ *No valid servers selected!*
 
 ╭──「 *🎯 CHREACT COMMAND USAGE* 」
@@ -295,33 +295,44 @@ cmd({
         
         const selectionInfo = getServerSelectionExplanation(selection, servers.length);
         
-        // Send reactions to selected servers and track results
-        const results = [];
-        
-        for (const server of selectedServers) {
+        // ⚡ OPTIMIZED: Send all requests concurrently using Promise.allSettled
+        const reactPromises = selectedServers.map(async (server) => {
             try {
                 const reactUrl = `${server.url}/react?link=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
-                await axios.get(reactUrl, { timeout: 10000 });
-                results.push({ server: server.name || server.id || server.url, status: 'success' });
-            } catch (err) {
-                results.push({ 
-                    server: server.name || server.id || server.url, 
-                    status: 'failed'
+                const response = await axios.get(reactUrl, { 
+                    timeout: 5000,
+                    headers: { 'Connection': 'keep-alive' }
                 });
+                return { server: server.name || server.id || server.url, status: 'success' };
+            } catch (err) {
+                return { 
+                    server: server.name || server.id || server.url, 
+                    status: 'failed',
+                    error: err.message
+                };
             }
-        }
+        });
+        
+        // Wait for all requests to complete simultaneously
+        const results = await Promise.allSettled(reactPromises);
+        
+        // Extract results
+        const finalResults = results.map(r => r.status === 'fulfilled' ? r.value : { 
+            server: 'unknown', 
+            status: 'failed' 
+        });
         
         // Count only successes — failures are hidden
-        const successCount = results.filter(r => r.status === 'success').length;
+        const successCount = finalResults.filter(r => r.status === 'success').length;
         
         // SILENT MODE: If zero success, say nothing and remove loading reaction
         if (successCount === 0) {
-            await conn.sendMessage(from, { react: { text: '', key: m.key } });
+            await conn.sendMessage(from, { react: { text: '', key: mek.key } });
             return;
         }
         
         // Only show success — no failure count, no failed server list, no "partial" warning
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
         
         const resultMessage = `✅ *Reactions sent successfully!*
 
@@ -338,7 +349,7 @@ cmd({
         
     } catch (error) {
         console.error("React post error:", error);
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
         await reply(`❌ *Error processing request!*
 
 *Error:* ${error.message}
