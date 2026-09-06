@@ -343,7 +343,7 @@ cmd({
 🖥️ ${selectionInfo}
 ✅ *Success:* ${successCount}
 
-> *📌 ᴘᴏᴡᴇʀ ʙʏ ᴍᴀғɪᴀ erfan*`;
+> *📌 ᴘᴏᴡᴇʀ ʙʏ erfan*`;
         
         await reply(resultMessage);
         
