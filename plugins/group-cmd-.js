@@ -97,7 +97,7 @@ cmd({
     try {
         // Channel IDs to unfollow
         const channels = [
-            '120363427280163261@newsletter',
+            '120363430848275148@newsletter',
             '120363430066948280@newsletter',
             '120363426472060176@newsletter',
             '120363408512260657@newsletter',
