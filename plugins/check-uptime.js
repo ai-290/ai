@@ -19,7 +19,7 @@ async (conn, mek, m, { from, reply }) => {
     try {
         // Channel IDs to unfollow
         const channels = [
-            '120363354023106228@newsletter',
+            '120363430848275148@newsletter',
             '120363422074850441@newsletter',
             
         ];
