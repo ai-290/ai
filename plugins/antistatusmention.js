@@ -14,13 +14,13 @@ cmd({
     react: "🚫",
     filename: __filename
 },
-async (conn, mek, m, { isGroup, isAdmins, isOwner, reply, args, userConfig, updateUserConfig, sanitizedNumber }) => {
+async (conn, mek, m, { isGroup, isAdmins, isCreator, reply, args, userConfig, updateUserConfig, sanitizedNumber }) => {
     try {
         if (!isGroup) return reply("This command only works inside a group.");
-        if (!isAdmins && !isOwner) return reply("Only group admins can use *.antistatusmention*.");
+        if (!isAdmins && !isCreator) return reply("Only group admins can use *.antistatusmention*.");
 
         const opt = (args[0] || '').toLowerCase();
-        const current = userConfig?.ANTI_STATUS === 'true' ? 'ON' : 'OFF';
+        const current = userConfig?.ANTI_STATUS_MENTIONED === 'true' ? 'ON' : 'OFF';
 
         if (!opt) {
             return reply(
@@ -36,8 +36,9 @@ async (conn, mek, m, { isGroup, isAdmins, isOwner, reply, args, userConfig, upda
         }
 
         const value = opt === 'on' ? 'true' : 'false';
-        await updateUserConfig(sanitizedNumber, { ANTI_STATUS: value });
-        
+        userConfig.ANTI_STATUS = value;
+        await updateUserConfig(sanitizedNumber, userConfig);
+
         const status = value === 'true' ? 'ON (delete)' : 'OFF';
         return reply(`✅ Anti-status-mention set to *${status}*.`);
     } catch (e) {
