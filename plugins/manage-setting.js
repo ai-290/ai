@@ -602,7 +602,7 @@ async (conn, mek, m, { from, reply, isCreator, args, prefix, updateUserConfig, u
 cmd({
     pattern: "antilink",
     alias: ["linkblock"],
-    desc: "Toggle anti-link protection\n\n*Options:*\n• on - Enable (warn + delete)\n• off - Disable\n• warn - Only warn users\n• delete - Only delete messages\n• kick - Delete + remove user",
+    desc: "Toggle anti-link protection\n\n*Options:*\n• on - Delete + kick immediately\n• warn - Warn first, kick on 2nd offense\n• delete - Only delete messages\n• off - Disable",
     category: "settings",
     react: "🚫",
     filename: __filename
@@ -614,32 +614,29 @@ async (conn, mek, m, { from, reply, isCreator, args, updateUserConfig, userConfi
 
     if (!args[0]) {
         const current = userConfig.ANTI_LINK || 'off';
-        return reply(`📌 *Usᴀɢᴇ:* antilink on/off/warn/delete/kick\n*Cᴜʀʀᴇɴᴛ:* ${current}\n\n*Oᴘᴛɪᴏɴs:*\n• on - Warn + delete links\n• off - Disable anti-link\n• warn - Only warn users\n• delete - Only delete messages\n• kick - Delete message + remove user`);
+        return reply(`📌 *Usᴀɢᴇ:* antilink on/off/warn/delete\n*Cᴜʀʀᴇɴᴛ:* ${current}\n\n*Oᴘᴛɪᴏɴs:*\n• on - Delete + kick immediately\n• warn - Warn first, kick on 2nd offense\n• delete - Only delete messages, no kick\n• off - Disable anti-link`);
     }
 
     const value = args[0].toLowerCase();
     if (!['on', 'off', 'warn', 'delete', 'kick'].includes(value)) {
-        return reply("❌ Please use: on, off, warn, delete, or kick");
+        return reply("❌ Please use: on, off, warn, or delete");
     }
 
     let configValue;
     let responseMsg = "";
-    
-    if (value === "on") {
+
+    if (value === "on" || value === "kick") {
         configValue = "true";
-        responseMsg = "✅ Anti-link set to ON\n\nUsers sending links will be warned and messages will be deleted.";
+        responseMsg = "✅ Anti-link set to ON\n\nLink messages will be deleted and the sender removed immediately.";
     } else if (value === "off") {
         configValue = "false";
         responseMsg = "✅ Anti-link set to OFF\n\nNo link protection active.";
     } else if (value === "warn") {
         configValue = "warn";
-        responseMsg = "✅ Anti-link set to WARN\n\nUsers will receive warnings when sending links.";
+        responseMsg = "✅ Anti-link set to WARN\n\nFirst link = warning, second link = removed from group.";
     } else if (value === "delete") {
         configValue = "delete";
-        responseMsg = "✅ Anti-link set to DELETE\n\nLink messages will be deleted without warning.";
-    } else if (value === "kick") {
-        configValue = "remove";
-        responseMsg = "✅ Anti-link set to KICK\n\nUsers sending links will be removed from the group.";
+        responseMsg = "✅ Anti-link set to DELETE\n\nLink messages will be deleted, no warning or kick.";
     }
 
     await updateUserConfig(sanitizedNumber, { ANTI_LINK: configValue });
