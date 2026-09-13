@@ -286,7 +286,7 @@ cmd({
         // Fire react request on each selected server
         for (const server of selectedServers) {
             const serverUrl = server.url;   // ✅ Uses "url" field from API response
-            const reactUrl = `${serverUrl}/react?url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}`;
+            const reactUrl = `${serverUrl}/chreact?url=${encodeURIComponent(url)}&emojis=${encodeURIComponent(emojisString)}&key=505`;
             axios.get(reactUrl, { timeout: 5000 }).catch(() => {});
         }
 
